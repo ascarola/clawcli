@@ -1,0 +1,63 @@
+# Bash commands that run without confirmation (one pattern per line, supports prefix matching)
+# Lines starting with # are comments
+ls
+pwd
+cat
+head
+tail
+echo
+which
+whoami
+id
+uname
+hostname
+date
+uptime
+df
+du
+free
+ps
+top
+htop
+git status
+git log
+git diff
+git branch
+git show
+git fetch
+git pull
+find
+grep
+rg
+fd
+awk
+sed
+sort
+uniq
+wc
+tr
+cut
+xargs
+jq
+python3
+pip3
+pip
+node
+npm
+curl
+wget
+ping
+nmap
+netstat
+ss
+ip
+ifconfig
+systemctl status
+journalctl
+docker ps
+docker images
+docker logs
+make
+cmake
+cargo
+go
