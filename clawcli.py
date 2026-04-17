@@ -21,7 +21,7 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-CLAWCLI_DIR = Path(__file__).parent.resolve()
+CLAWCLI_DIR = Path(__file__).resolve().parent  # resolve symlink before .parent
 CONFIG_FILE  = CLAWCLI_DIR / "config.json"
 MEMORY_FILE  = CLAWCLI_DIR / "memory" / "MEMORY.md"
 SYSPROMPT    = CLAWCLI_DIR / "system_prompt.txt"
@@ -295,7 +295,7 @@ def print_welcome(config: dict):
     console.print(Panel(
         f"[bold white]CLAWCLI[/bold white]  [dim]powered by {model}[/dim]\n"
         f"[dim]cwd: {cwd}[/dim]\n"
-        f"[dim]Type your task, 'research <topic>' to search, /help for commands, Ctrl+C to exit[/dim]",
+        f"[dim]Type your task, 'research <topic>' to search, /help for commands, 'clawcli update' to update[/dim]",
         border_style="blue",
         padding=(0, 1),
     ))
@@ -371,6 +371,31 @@ def handle_slash_command(cmd: str, config: dict, messages: list) -> tuple[bool, 
     return False, messages
 
 
+def do_update():
+    import subprocess
+    console.print(f"[dim]Updating CLAWCLI from origin/main...[/dim]")
+    result = subprocess.run(
+        ["git", "pull", "--ff-only", "origin", "main"],
+        cwd=str(CLAWCLI_DIR),
+        capture_output=True,
+        text=True,
+    )
+    output = (result.stdout + result.stderr).strip()
+    console.print(output)
+    if result.returncode != 0:
+        console.print("[red]Update failed.[/red]")
+        sys.exit(1)
+    if "Already up to date" not in output:
+        console.print("[dim]Re-installing dependencies...[/dim]")
+        pip = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "-r", str(CLAWCLI_DIR / "requirements.txt")],
+            capture_output=True, text=True,
+        )
+        if pip.returncode != 0:
+            console.print(f"[yellow]pip warning:[/yellow] {pip.stderr.strip()}")
+    console.print("[green]Up to date.[/green]")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="clawcli",
@@ -390,6 +415,11 @@ def main():
 
     system_prompt = build_system_prompt(config)
     messages = [{"role": "system", "content": system_prompt}]
+
+    # Built-in subcommands
+    if args.prompt and args.prompt[0] == "update":
+        do_update()
+        return
 
     # One-shot mode
     if args.prompt:
