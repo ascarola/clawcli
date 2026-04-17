@@ -325,6 +325,7 @@ def show_help():
         "  /compact       — summarize history to free context window\n"
         "  /config        — show current config\n"
         "  /cwd <path>    — change working directory\n"
+        "  /model list    — list available Ollama models\n"
         "  /model <name>  — switch Ollama model\n"
         "  /exit          — quit and save session\n\n"
         "[bold]Special prompts:[/bold]\n"
@@ -426,7 +427,23 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         return True, messages
 
     elif command == "/model":
-        if arg:
+        if arg == "list":
+            ollama_url = config.get("ollama_url", "http://192.168.1.62:11434")
+            try:
+                data = requests.get(f"{ollama_url}/api/tags", timeout=10).json()
+                models = data.get("models", [])
+                current = config.get("model")
+                console.print(f"\n[bold]Available models on {ollama_url}:[/bold]")
+                for m in models:
+                    name = m["name"]
+                    size_gb = m["size"] / 1e9
+                    params = m.get("details", {}).get("parameter_size", "")
+                    quant  = m.get("details", {}).get("quantization_level", "")
+                    marker = "[bold green] ◀ active[/bold green]" if name == current else ""
+                    console.print(f"  [cyan]{name}[/cyan]  [dim]{params} {quant} {size_gb:.1f}GB[/dim]{marker}")
+            except Exception as e:
+                console.print(f"[red]Could not fetch models: {e}[/red]")
+        elif arg:
             config["model"] = arg
             console.print(f"[dim]Model switched to: {arg}[/dim]")
         else:
@@ -579,7 +596,17 @@ def main():
             os.chdir(saved_cwd)
         except Exception:
             pass
-        console.print(f"[dim]Resumed session {session_id}[/dim]")
+        console.print(f"\n[dim]Resumed session {session_id}[/dim]\n")
+        for m in prior_messages:
+            role = m.get("role")
+            content = m.get("content") or ""
+            if not content.strip():
+                continue
+            if role == "user":
+                console.print(f"[bold cyan]You:[/bold cyan] {content.strip()}")
+            elif role == "assistant":
+                console.print(Markdown(content.strip()))
+            console.print()
 
     # Interactive REPL
     print_welcome(config)
