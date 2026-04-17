@@ -86,7 +86,7 @@ def confirm_bash(command: str, description: str) -> bool:
         return False
 
 
-def dispatch_tool(name: str, args: dict, config: dict) -> str:
+def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) -> str:
     ollama_url  = config.get("ollama_url", "http://192.168.1.62:11434")
     searxng_url = config.get("searxng_url", "http://192.168.1.140:8888")
 
@@ -124,7 +124,7 @@ def dispatch_tool(name: str, args: dict, config: dict) -> str:
                 args.get("timeout", 60),
                 args.get("description"),
                 config_dir=str(CLAWCLI_DIR),
-                confirm_callback=confirm_bash,
+                confirm_callback=confirm_bash if confirm else None,
             )
 
         elif name == "web_search":
@@ -272,7 +272,7 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
                     args = {}
 
             render_tool_call(name, args)
-            result = dispatch_tool(name, args, config)
+            result = dispatch_tool(name, args, config, confirm=config.get("confirm_bash", False))
 
             # Show brief result preview
             preview = result[:200] + "…" if len(result) > 200 else result

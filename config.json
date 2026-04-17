@@ -6,7 +6,7 @@
   "context_window": 8192,
   "stream": true,
   "working_dir": null,
-  "confirm_bash": true,
+  "confirm_bash": false,
   "confirm_write": false,
   "max_tool_iterations": 20
 }
