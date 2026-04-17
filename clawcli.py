@@ -469,6 +469,7 @@ def main():
     parser.add_argument("--model", "-m", help="Override Ollama model")
     parser.add_argument("--no-stream", action="store_true", help="Disable streaming output")
     parser.add_argument("--resume", metavar="SESSION_ID", help="Resume a saved session")
+    parser.add_argument("--continue", dest="resume_last", action="store_true", help="Resume the last saved session")
     parser.add_argument("--version", action="version", version="CLAWCLI 1.0.0")
     args = parser.parse_args()
 
@@ -498,6 +499,14 @@ def main():
 
     # Session setup
     session_id = new_session_id()
+    if args.resume_last:
+        SESSIONS_DIR.mkdir(exist_ok=True)
+        files = sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not files:
+            console.print("[red]No saved sessions to resume.[/red]")
+            sys.exit(1)
+        args.resume = files[0].stem
+
     if args.resume:
         prior_messages, saved_cwd = load_session(args.resume)
         messages.extend(prior_messages)
