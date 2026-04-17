@@ -2,13 +2,24 @@
 # CLAWCLI install script — run on any machine to install clawcli
 set -e
 
-REPO_URL="https://github.com/ascarola/clawcli.git"
+REPO_OWNER="ascarola"
+REPO_NAME="clawcli"
 INSTALL_DIR="${CLAWCLI_DIR:-$HOME/clawcli}"
 BIN_LINK="/usr/local/bin/clawcli"
 
 # Configurable endpoints (override via env vars)
 OLLAMA_URL="${OLLAMA_URL:-http://192.168.1.62:11434}"
 SEARXNG_URL="${SEARXNG_URL:-http://192.168.1.140:8888}"
+
+# ── GitHub token (required for private repo) ──────────────────────────────────
+if [ -z "$GITHUB_TOKEN" ]; then
+    echo "ERROR: GITHUB_TOKEN is not set."
+    echo "  export GITHUB_TOKEN=github_pat_xxx"
+    echo "  Then re-run: bash <(curl -s -H \"Authorization: Bearer \$GITHUB_TOKEN\" https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/main/install.sh)"
+    exit 1
+fi
+
+REPO_URL="https://${REPO_OWNER}:${GITHUB_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.git"
 
 echo "==> Installing CLAWCLI"
 echo "    Ollama:  $OLLAMA_URL"
@@ -24,6 +35,7 @@ command -v git     >/dev/null 2>&1 || { echo "ERROR: git not found. Install it a
 # ── Clone or update ───────────────────────────────────────────────────────────
 if [ -d "$INSTALL_DIR/.git" ]; then
     echo "==> Updating existing installation..."
+    git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL"
     git -C "$INSTALL_DIR" pull --ff-only
 else
     if [ -d "$INSTALL_DIR" ]; then

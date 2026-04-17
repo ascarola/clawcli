@@ -23,7 +23,8 @@ A Claude Code-like AI assistant for the terminal, powered by a local Ollama mode
 Run the install script on any machine in your network:
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/ascarola/clawcli/main/install.sh)
+export GITHUB_TOKEN=github_pat_xxx
+bash <(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://raw.githubusercontent.com/ascarola/clawcli/main/install.sh)
 ```
 
 Or clone and install manually:
