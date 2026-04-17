@@ -87,8 +87,15 @@ fi
 # ── Symlink to PATH ───────────────────────────────────────────────────────────
 chmod +x "$INSTALL_DIR/clawcli.py"
 
+# On Apple Silicon, prefer /opt/homebrew/bin; fall back to /usr/local/bin then ~/.local/bin
+if [ "$(uname -s)" = "Darwin" ] && [ -d "/opt/homebrew/bin" ]; then
+    BIN_LINK="/opt/homebrew/bin/clawcli"
+fi
+
 LINK_OK=0
-if [ -w "$(dirname "$BIN_LINK")" ] || sudo -n true 2>/dev/null; then
+if [ -w "$(dirname "$BIN_LINK")" ]; then
+    ln -sf "$INSTALL_DIR/clawcli.py" "$BIN_LINK" && LINK_OK=1
+elif sudo -n true 2>/dev/null; then
     sudo ln -sf "$INSTALL_DIR/clawcli.py" "$BIN_LINK" && LINK_OK=1
 fi
 
