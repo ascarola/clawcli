@@ -334,8 +334,7 @@ def show_help():
         "  clawcli --resume <id>        — resume a session\n\n"
         "[bold]Key bindings:[/bold]\n"
         "  Enter           — submit\n"
-        "  Shift+Enter     — newline (multi-line input)\n"
-        "  Alt+Enter       — newline (terminal fallback)\n"
+        "  Alt+Enter       — newline (multi-line input)\n"
         "  Ctrl+C          — cancel / exit\n"
         "  Up/Down         — history navigation",
         title="CLAWCLI Help",
@@ -585,8 +584,7 @@ def main():
 
     kb = KeyBindings()
 
-    @kb.add("s-enter")           # Shift+Enter → newline
-    @kb.add("escape", "enter")   # Alt/Meta+Enter → newline (terminal fallback)
+    @kb.add("escape", "enter")   # Alt/Meta+Enter → newline
     def _insert_newline(event):
         event.current_buffer.insert_text("\n")
 
