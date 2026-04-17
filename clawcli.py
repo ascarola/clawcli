@@ -177,42 +177,40 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
     if not stream:
         return resp.json()
 
-    # Streaming: accumulate content and tool_calls
-    full_content     = ""
-    tool_calls       = []
-    printed_anything = False
-    prompt_tokens    = 0
+    # Streaming: accumulate content and render live as Markdown
+    full_content      = ""
+    tool_calls        = []
+    prompt_tokens     = 0
     completion_tokens = 0
 
-    for line in resp.iter_lines():
-        if not line:
-            continue
-        try:
-            chunk = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    console.print()
+    with Live("", console=console, refresh_per_second=12, vertical_overflow="visible") as live:
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
-        msg = chunk.get("message", {})
-        delta_content = msg.get("content", "")
-        delta_tools   = msg.get("tool_calls", [])
+            msg           = chunk.get("message", {})
+            delta_content = msg.get("content", "")
+            delta_tools   = msg.get("tool_calls", [])
 
-        if delta_content:
-            if not printed_anything:
-                console.print()
-                printed_anything = True
-            console.print(delta_content, end="", markup=False)
-            full_content += delta_content
+            if delta_content:
+                full_content += delta_content
+                live.update(Markdown(full_content))
 
-        if delta_tools:
-            tool_calls.extend(delta_tools)
+            if delta_tools:
+                tool_calls.extend(delta_tools)
 
-        if chunk.get("done"):
-            prompt_tokens     = chunk.get("prompt_eval_count", 0)
-            completion_tokens = chunk.get("eval_count", 0)
-            break
+            if chunk.get("done"):
+                prompt_tokens     = chunk.get("prompt_eval_count", 0)
+                completion_tokens = chunk.get("eval_count", 0)
+                break
 
-    if full_content:
-        console.print()
+    if not full_content:
+        console.print()  # blank line after tool-only responses
 
     return {
         "message": {
