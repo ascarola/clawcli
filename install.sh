@@ -50,20 +50,24 @@ fi
 echo "==> Installing Python dependencies..."
 pip3 install -q -r "$INSTALL_DIR/requirements.txt"
 
-# ── Configure endpoints for this machine ─────────────────────────────────────
+# ── Generate machine-local config.json from defaults template ─────────────────
+DEFAULTS="$INSTALL_DIR/config.defaults.json"
 CONFIG="$INSTALL_DIR/config.json"
-if [ -f "$CONFIG" ]; then
-    python3 - "$CONFIG" "$OLLAMA_URL" "$SEARXNG_URL" <<'PYEOF'
+if [ ! -f "$CONFIG" ]; then
+    python3 - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$SEARXNG_URL" <<'PYEOF'
 import sys, json
-path, ollama_url, searxng_url = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(path) as f:
+defaults_path, out_path, ollama_url, searxng_url = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+with open(defaults_path) as f:
     cfg = json.load(f)
 cfg["ollama_url"]  = ollama_url
 cfg["searxng_url"] = searxng_url
-with open(path, "w") as f:
+with open(out_path, "w") as f:
     json.dump(cfg, f, indent=2)
-print(f"    config.json updated")
+    f.write("\n")
+print("    config.json created from defaults")
 PYEOF
+else
+    echo "==> config.json already exists, skipping (edit manually or delete to regenerate)"
 fi
 
 # ── Ensure memory file exists ─────────────────────────────────────────────────

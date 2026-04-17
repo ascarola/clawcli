@@ -374,23 +374,6 @@ def handle_slash_command(cmd: str, config: dict, messages: list) -> tuple[bool, 
 def do_update():
     import subprocess
 
-    # Preserve machine-local config overrides before git touches config.json
-    local_overrides = {}
-    if CONFIG_FILE.exists():
-        try:
-            saved = json.loads(CONFIG_FILE.read_text())
-            for key in ("ollama_url", "searxng_url"):
-                if key in saved:
-                    local_overrides[key] = saved[key]
-        except Exception:
-            pass
-
-    # Reset config.json so git pull won't abort due to local modifications
-    subprocess.run(
-        ["git", "checkout", "--", "config.json"],
-        cwd=str(CLAWCLI_DIR), capture_output=True,
-    )
-
     console.print("[dim]Updating CLAWCLI from origin/main...[/dim]")
     result = subprocess.run(
         ["git", "pull", "--ff-only", "origin", "main"],
@@ -403,16 +386,6 @@ def do_update():
     if result.returncode != 0:
         console.print("[red]Update failed.[/red]")
         sys.exit(1)
-
-    # Re-apply machine-local overrides on top of the freshly pulled config.json
-    if local_overrides and CONFIG_FILE.exists():
-        try:
-            cfg = json.loads(CONFIG_FILE.read_text())
-            cfg.update(local_overrides)
-            CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n")
-            console.print(f"[dim]Restored local config: {', '.join(local_overrides)}[/dim]")
-        except Exception as e:
-            console.print(f"[yellow]Warning: could not restore local config: {e}[/yellow]")
 
     if "Already up to date" not in output:
         console.print("[dim]Re-installing dependencies...[/dim]")
