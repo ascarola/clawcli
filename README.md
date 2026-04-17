@@ -4,7 +4,7 @@ A Claude Code-like AI assistant for the terminal, powered by a local Ollama mode
 
 ## Features
 
-- Interactive REPL with conversation history
+- Interactive REPL with multi-line input and conversation history
 - Tool use: read/write/edit files, run bash commands, grep/glob filesystem
 - Web research via SearXNG (`research <topic>`)
 - Persistent memory across sessions
@@ -109,6 +109,22 @@ clawcli --model gemma4:e4b
 ├── install.sh
 └── README.md
 ```
+
+## Multi-line Input
+
+| Key | Works on |
+|-----|----------|
+| `Ctrl+J` | Every terminal, every OS |
+| `Shift+Enter` | iTerm2, kitty, and terminals supporting CSI u sequences |
+| `Alt+Enter` | Linux terminals |
+
+**Mac Terminal.app — one-time Shift+Enter setup:**
+1. Terminal.app → Preferences → Profiles → Keyboard
+2. Click `+` → Key: `Shift+Return`, Action: `Send Text`, Value: `\x1b[13;2u`
+
+**iTerm2 — one-time Shift+Enter setup:**
+1. Preferences → Profiles → Keys → `+`
+2. Keyboard Shortcut: Shift+Enter, Action: Send Escape Sequence, Value: `[13;2u`
 
 ## Model
 

@@ -334,7 +334,9 @@ def show_help():
         "  clawcli --resume <id>        — resume a session\n\n"
         "[bold]Key bindings:[/bold]\n"
         "  Enter           — submit\n"
-        "  Alt+Enter       — newline (multi-line input)\n"
+        "  Shift+Enter     — newline (iTerm2/kitty; see README for Terminal.app setup)\n"
+        "  Ctrl+J          — newline (works everywhere)\n"
+        "  Alt+Enter       — newline (Linux terminals)\n"
         "  Ctrl+C          — cancel / exit\n"
         "  Up/Down         — history navigation",
         title="CLAWCLI Help",
@@ -584,9 +586,16 @@ def main():
 
     kb = KeyBindings()
 
-    @kb.add("escape", "enter")   # Alt/Meta+Enter → newline
     def _insert_newline(event):
         event.current_buffer.insert_text("\n")
+
+    # Shift+Enter: bind to the CSI sequence most terminals send (iTerm2, kitty, etc.)
+    # Mac Terminal.app: enable this via Preferences → Profiles → Keyboard →
+    #   add binding: Shift+Enter → send escape sequence → [13;2u
+    kb.add("\x1b", "[", "1", "3", ";", "2", "u")(_insert_newline)
+
+    kb.add("escape", "enter")(_insert_newline)  # Alt/Option+Enter
+    kb.add("c-j")(_insert_newline)              # Ctrl+J (works everywhere)
 
     @kb.add("enter")             # Enter → submit
     def _submit(event):
