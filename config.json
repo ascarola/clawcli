@@ -3,7 +3,7 @@
   "ollama_url": "http://192.168.1.62:11434",
   "searxng_url": "http://192.168.1.140:8888",
   "temperature": 0.1,
-  "context_window": 8192,
+  "context_window": 131072,
   "stream": true,
   "working_dir": null,
   "confirm_bash": false,
