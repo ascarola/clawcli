@@ -17,8 +17,9 @@ env/
 # Machine-specific config (generated from config.defaults.json by install.sh)
 config.json
 
-# Memory (personal — don't share)
+# Memory and sessions (personal — don't share)
 memory/MEMORY.md
+sessions/
 
 # Shell history
 .clawcli_history

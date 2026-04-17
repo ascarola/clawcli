@@ -5,6 +5,7 @@ import os
 import sys
 import json
 import re
+import uuid
 import argparse
 import signal
 from datetime import datetime
@@ -21,11 +22,12 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-CLAWCLI_DIR = Path(__file__).resolve().parent  # resolve symlink before .parent
+CLAWCLI_DIR  = Path(__file__).resolve().parent  # resolve symlink before .parent
 CONFIG_FILE  = CLAWCLI_DIR / "config.json"
 MEMORY_FILE  = CLAWCLI_DIR / "memory" / "MEMORY.md"
 SYSPROMPT    = CLAWCLI_DIR / "system_prompt.txt"
 HISTORY_FILE = Path.home() / ".clawcli_history"
+SESSIONS_DIR = CLAWCLI_DIR / "sessions"
 
 # ── Console ──────────────────────────────────────────────────────────────────
 console = Console()
@@ -310,9 +312,12 @@ def show_help():
         "  /config        — show current config\n"
         "  /cwd <path>    — change working directory\n"
         "  /model <name>  — switch Ollama model\n"
-        "  /exit          — quit CLAWCLI\n\n"
+        "  /exit          — quit and save session\n\n"
         "[bold]Special prompts:[/bold]\n"
         "  research <topic>  — search SearXNG then summarize\n\n"
+        "[bold]Sessions:[/bold]\n"
+        "  clawcli sessions             — list saved sessions\n"
+        "  clawcli --resume <id>        — resume a session\n\n"
         "[bold]Key bindings:[/bold]\n"
         "  Enter       — submit (single line)\n"
         "  Ctrl+C      — cancel / exit\n"
@@ -322,7 +327,7 @@ def show_help():
     ))
 
 
-def handle_slash_command(cmd: str, config: dict, messages: list) -> tuple[bool, list]:
+def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str = None) -> tuple[bool, list]:
     parts = cmd.strip().split(None, 1)
     command = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
@@ -365,10 +370,67 @@ def handle_slash_command(cmd: str, config: dict, messages: list) -> tuple[bool, 
         return True, messages
 
     elif command in ("/exit", "/quit", "/q"):
-        console.print("[dim]Goodbye.[/dim]")
+        if session_id:
+            save_session(session_id, messages, os.getcwd())
+            print_resume_hint(session_id)
+        else:
+            console.print("[dim]Goodbye.[/dim]")
         sys.exit(0)
 
     return False, messages
+
+
+def new_session_id() -> str:
+    return str(uuid.uuid4())
+
+
+def save_session(session_id: str, messages: list, cwd: str):
+    SESSIONS_DIR.mkdir(exist_ok=True)
+    path = SESSIONS_DIR / f"{session_id}.json"
+    # Strip system message — it's rebuilt from current state on resume
+    payload = {
+        "id": session_id,
+        "saved_at": datetime.now().isoformat(),
+        "cwd": cwd,
+        "messages": [m for m in messages if m.get("role") != "system"],
+    }
+    path.write_text(json.dumps(payload, indent=2))
+
+
+def load_session(session_id: str) -> tuple[list, str]:
+    path = SESSIONS_DIR / f"{session_id}.json"
+    if not path.exists():
+        console.print(f"[red]Session not found: {session_id}[/red]")
+        sys.exit(1)
+    payload = json.loads(path.read_text())
+    return payload["messages"], payload.get("cwd", os.getcwd())
+
+
+def list_sessions():
+    SESSIONS_DIR.mkdir(exist_ok=True)
+    files = sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not files:
+        console.print("[dim]No saved sessions.[/dim]")
+        return
+    console.print(f"[bold]Saved sessions:[/bold] ({len(files)} total)\n")
+    for f in files:
+        try:
+            data = json.loads(f.read_text())
+            saved_at = data.get("saved_at", "")[:19].replace("T", " ")
+            cwd = data.get("cwd", "")
+            msgs = [m for m in data.get("messages", []) if m.get("role") == "user"]
+            first = msgs[0]["content"][:60] + "…" if msgs else "(empty)"
+            sid = f.stem
+            console.print(f"  [cyan]{sid}[/cyan]")
+            console.print(f"  [dim]{saved_at}  {cwd}[/dim]")
+            console.print(f"  [white]{first}[/white]\n")
+        except Exception:
+            console.print(f"  [dim]{f.stem}[/dim] (unreadable)\n")
+
+
+def print_resume_hint(session_id: str):
+    console.print(f"\n[dim]Session saved. To resume:[/dim]")
+    console.print(f"[bold cyan]  clawcli --resume {session_id}[/bold cyan]")
 
 
 def do_update():
@@ -406,6 +468,7 @@ def main():
     parser.add_argument("prompt", nargs="*", help="One-shot prompt (non-interactive)")
     parser.add_argument("--model", "-m", help="Override Ollama model")
     parser.add_argument("--no-stream", action="store_true", help="Disable streaming output")
+    parser.add_argument("--resume", metavar="SESSION_ID", help="Resume a saved session")
     parser.add_argument("--version", action="version", version="CLAWCLI 1.0.0")
     args = parser.parse_args()
 
@@ -423,11 +486,27 @@ def main():
         do_update()
         return
 
-    # One-shot mode
+    if args.prompt and args.prompt[0] == "sessions":
+        list_sessions()
+        return
+
+    # One-shot mode (no session save)
     if args.prompt:
         user_input = " ".join(args.prompt)
         messages = run_agentic_loop(user_input, messages, config)
         return
+
+    # Session setup
+    session_id = new_session_id()
+    if args.resume:
+        prior_messages, saved_cwd = load_session(args.resume)
+        messages.extend(prior_messages)
+        session_id = args.resume
+        try:
+            os.chdir(saved_cwd)
+        except Exception:
+            pass
+        console.print(f"[dim]Resumed session {session_id}[/dim]")
 
     # Interactive REPL
     print_welcome(config)
@@ -447,11 +526,13 @@ def main():
             try:
                 session.prompt("  > ")
             except KeyboardInterrupt:
-                console.print("[dim]Goodbye.[/dim]")
+                save_session(session_id, messages, os.getcwd())
+                print_resume_hint(session_id)
                 sys.exit(0)
             continue
         except EOFError:
-            console.print("[dim]Goodbye.[/dim]")
+            save_session(session_id, messages, os.getcwd())
+            print_resume_hint(session_id)
             break
 
         user_input = user_input.strip()
@@ -459,7 +540,7 @@ def main():
             continue
 
         if user_input.startswith("/"):
-            handled, messages = handle_slash_command(user_input, config, messages)
+            handled, messages = handle_slash_command(user_input, config, messages, session_id)
             if handled:
                 continue
 
