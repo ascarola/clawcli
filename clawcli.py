@@ -20,6 +20,7 @@ from rich.live import Live
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
+from prompt_toolkit.key_binding import KeyBindings
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 CLAWCLI_DIR  = Path(__file__).resolve().parent  # resolve symlink before .parent
@@ -177,10 +178,11 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
         return resp.json()
 
     # Streaming: accumulate content and tool_calls
-    full_content   = ""
-    tool_calls     = []
-    current_tc     = None
+    full_content     = ""
+    tool_calls       = []
     printed_anything = False
+    prompt_tokens    = 0
+    completion_tokens = 0
 
     for line in resp.iter_lines():
         if not line:
@@ -205,6 +207,8 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
             tool_calls.extend(delta_tools)
 
         if chunk.get("done"):
+            prompt_tokens     = chunk.get("prompt_eval_count", 0)
+            completion_tokens = chunk.get("eval_count", 0)
             break
 
     if full_content:
@@ -215,7 +219,9 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
             "role": "assistant",
             "content": full_content,
             "tool_calls": tool_calls,
-        }
+        },
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
     }
 
 
@@ -251,6 +257,8 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
         msg = response.get("message", {})
         content    = msg.get("content", "")
         tool_calls = msg.get("tool_calls", [])
+        prompt_tokens = response.get("prompt_tokens", 0)
+        ctx_window    = config.get("context_window", 131072)
 
         messages.append({
             "role": "assistant",
@@ -259,6 +267,11 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
         })
 
         if not tool_calls:
+            if prompt_tokens:
+                pct = (prompt_tokens / ctx_window) * 100
+                console.print(
+                    f"[dim]  context: {prompt_tokens:,} / {ctx_window:,} tokens ({pct:.1f}%)[/dim]"
+                )
             break
 
         # Execute all tool calls and collect results
@@ -309,6 +322,7 @@ def show_help():
         "  /help          — show this help\n"
         "  /memory        — show current memory\n"
         "  /clear         — clear conversation history\n"
+        "  /compact       — summarize history to free context window\n"
         "  /config        — show current config\n"
         "  /cwd <path>    — change working directory\n"
         "  /model <name>  — switch Ollama model\n"
@@ -319,12 +333,57 @@ def show_help():
         "  clawcli sessions             — list saved sessions\n"
         "  clawcli --resume <id>        — resume a session\n\n"
         "[bold]Key bindings:[/bold]\n"
-        "  Enter       — submit (single line)\n"
-        "  Ctrl+C      — cancel / exit\n"
-        "  Up/Down     — history navigation",
+        "  Enter           — submit\n"
+        "  Shift+Enter     — newline (multi-line input)\n"
+        "  Alt+Enter       — newline (terminal fallback)\n"
+        "  Ctrl+C          — cancel / exit\n"
+        "  Up/Down         — history navigation",
         title="CLAWCLI Help",
         border_style="blue",
     ))
+
+
+def compact_messages(messages: list, config: dict) -> list:
+    non_system = [m for m in messages if m.get("role") != "system"]
+    if not non_system:
+        console.print("[dim]Nothing to compact.[/dim]")
+        return messages
+
+    history_text = "\n".join(
+        f"{m['role'].upper()}: {str(m.get('content', ''))[:500]}"
+        for m in non_system
+    )
+    summary_prompt = (
+        "Summarize the conversation below into a concise context block. Include: "
+        "the main goal, key decisions, files created or modified, current state, "
+        "and what remains to be done. Be specific — this will replace the full history.\n\n"
+        f"{history_text}"
+    )
+    console.print("[dim]Compacting conversation...[/dim]")
+    system_msg = next((m for m in messages if m.get("role") == "system"), None)
+    try:
+        response = chat(
+            [{"role": "system", "content": system_msg["content"] if system_msg else ""},
+             {"role": "user", "content": summary_prompt}],
+            config,
+            stream=False,
+        )
+        summary = response["message"]["content"]
+    except Exception as e:
+        console.print(f"[red]Compact failed: {e}[/red]")
+        return messages
+
+    new_messages = []
+    if system_msg:
+        new_messages.append(system_msg)
+    new_messages.append({
+        "role": "user",
+        "content": "[Conversation compacted — summary of prior context below]",
+    })
+    new_messages.append({"role": "assistant", "content": summary})
+    before = len(non_system)
+    console.print(f"[dim]Compacted {before} messages → 2. Use /config to check context usage.[/dim]")
+    return new_messages
 
 
 def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str = None) -> tuple[bool, list]:
@@ -344,6 +403,10 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
     elif command == "/clear":
         messages.clear()
         console.print("[dim]Conversation cleared.[/dim]")
+        return True, messages
+
+    elif command == "/compact":
+        messages = compact_messages(messages, config)
         return True, messages
 
     elif command == "/config":
@@ -520,10 +583,22 @@ def main():
     # Interactive REPL
     print_welcome(config)
 
+    kb = KeyBindings()
+
+    @kb.add("s-enter")           # Shift+Enter → newline
+    @kb.add("escape", "enter")   # Alt/Meta+Enter → newline (terminal fallback)
+    def _insert_newline(event):
+        event.current_buffer.insert_text("\n")
+
+    @kb.add("enter")             # Enter → submit
+    def _submit(event):
+        event.current_buffer.validate_and_handle()
+
     session = PromptSession(
         history=FileHistory(str(HISTORY_FILE)),
         style=Style.from_dict({"prompt": "bold cyan"}),
-        multiline=False,
+        multiline=True,
+        key_bindings=kb,
     )
 
     while True:
