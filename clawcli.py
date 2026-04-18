@@ -17,6 +17,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 from rich.live import Live
+from rich.spinner import Spinner
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
@@ -184,7 +185,7 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
     completion_tokens = 0
 
     console.print()
-    with Live("", console=console, refresh_per_second=12, vertical_overflow="visible") as live:
+    with Live(Spinner("dots", text="[dim]thinking…[/dim]"), console=console, refresh_per_second=12, vertical_overflow="visible") as live:
         for line in resp.iter_lines():
             if not line:
                 continue
