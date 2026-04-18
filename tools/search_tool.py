@@ -4,6 +4,7 @@ import re
 import json
 import ipaddress
 import socket
+import concurrent.futures
 import requests
 from urllib.parse import urlparse
 
@@ -29,15 +30,17 @@ def _is_private_url(url: str) -> bool:
             return any(addr in net for net in _PRIVATE_NETS)
         except ValueError:
             pass
-        # Hostname — resolve and validate the resulting IP
+        # Hostname — resolve and validate the resulting IP (2s timeout to avoid DNS hangs)
         try:
-            resolved = socket.getaddrinfo(host, None)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(socket.getaddrinfo, host, None)
+                resolved = future.result(timeout=2)
             return any(
                 any(ipaddress.ip_address(sockaddr[0]) in net for net in _PRIVATE_NETS)
                 for _, _, _, _, sockaddr in resolved
             )
-        except socket.gaierror:
-            return True  # unresolvable host — block
+        except (socket.gaierror, concurrent.futures.TimeoutError):
+            return True  # unresolvable or slow DNS — block
     except Exception:
         return True
 
