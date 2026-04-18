@@ -8,9 +8,15 @@ A Claude Code-like AI assistant for the terminal, powered by a local Ollama mode
 - Tool use: read/write/edit files, run bash commands, grep/glob filesystem
 - Web research via SearXNG (`research <topic>`)
 - Persistent memory across sessions
+- Session save/resume (`--resume`, `--continue`)
+- Live Markdown rendering with streaming output
+- Thinking spinner while waiting for model response
+- Token/context usage display after each response
+- `/compact` to summarize history and free context window
+- Auto-detects OS, distro, shell, and machine info for context-aware responses
+- Auto-detects model context window from Ollama on startup and model switch
 - Configurable allow/deny lists for bash commands
 - One-shot mode for scripting
-- Streaming output
 
 ## Requirements
 
@@ -49,9 +55,11 @@ Edit `config.json` to point at your Ollama and SearXNG servers.
 | `ollama_url` | `http://192.168.1.62:11434` | Ollama server URL |
 | `searxng_url` | `http://192.168.1.140:8888` | SearXNG instance URL |
 | `temperature` | `0.1` | Model temperature |
-| `context_window` | `8192` | Token context window |
+| `context_window` | auto-detected | Token context window (read from Ollama at startup) |
 | `stream` | `true` | Enable streaming output |
-| `confirm_bash` | `true` | Ask before unapproved bash commands |
+| `confirm_bash` | `false` | Ask before unapproved bash commands |
+| `confirm_write` | `false` | Ask before writing files |
+| `working_dir` | `null` | Override startup working directory |
 | `max_tool_iterations` | `20` | Max agentic loop iterations |
 
 `allowed_commands.txt` — bash command prefixes that run without confirmation (one per line).
@@ -65,6 +73,15 @@ Edit `config.json` to point at your Ollama and SearXNG servers.
 ```bash
 # Interactive mode
 clawcli
+
+# Resume last session
+clawcli --continue
+
+# Resume a specific session
+clawcli --resume <session-id>
+
+# List saved sessions
+clawcli sessions
 
 # One-shot mode
 clawcli "explain this repo's structure"
@@ -83,9 +100,12 @@ clawcli --model gemma4:e4b
 | `/help` | Show help |
 | `/memory` | Show current memory |
 | `/clear` | Clear conversation history |
+| `/compact` | Summarize history to free context window |
 | `/config` | Show current config |
 | `/cwd <path>` | Change working directory |
-| `/model <name>` | Switch Ollama model |
+| `/model` | Show current model |
+| `/model list` | List available models on the Ollama server |
+| `/model <name>` | Switch Ollama model (auto-detects context window) |
 | `/exit` | Quit |
 
 ## Directory Structure
@@ -100,6 +120,7 @@ clawcli --model gemma4:e4b
 ├── denied_commands.txt     # Blocked bash patterns
 ├── memory/
 │   └── MEMORY.md           # Persistent memory
+├── sessions/               # Saved sessions (gitignored)
 ├── tools/
 │   ├── __init__.py         # Tool definitions (Ollama schema)
 │   ├── file_tools.py       # File operations
@@ -128,4 +149,4 @@ clawcli --model gemma4:e4b
 
 ## Model
 
-Default model is `gemma4:26b` — Google Gemma 4 at 25.8B parameters (Q4_K_M), the most capable model available on the configured Ollama server. Switch via `--model` or `/model`.
+Default model is `gemma4:26b` — Google Gemma 4 at 25.8B parameters (Q4_K_M). Switch via `--model` or `/model`. Context window is auto-detected from Ollama for whichever model is active.
