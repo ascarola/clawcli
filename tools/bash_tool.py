@@ -36,7 +36,7 @@ def is_allowed(command: str, allowed: list[str]) -> bool:
 
 def execute_bash(
     command: str,
-    timeout: int = 60,
+    timeout: int = 300,
     description: str = None,
     config_dir: str = None,
     confirm_callback=None,
