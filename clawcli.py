@@ -6,6 +6,8 @@ import sys
 import json
 import re
 import uuid
+import socket
+import platform
 import argparse
 import signal
 from datetime import datetime
@@ -83,10 +85,34 @@ def save_memory(section: str, content: str) -> str:
     return f"Memory saved to section '{section}'"
 
 
+def detect_env_info() -> str:
+    uname = platform.uname()
+    lines = [
+        f"- OS: {uname.system} {uname.release} ({platform.version()})",
+        f"- Machine: {uname.machine}  Hostname: {socket.gethostname()}",
+        f"- Python: {sys.version.split()[0]}",
+        f"- Shell: {os.environ.get('SHELL', 'unknown')}",
+        f"- User: {os.environ.get('USER') or os.environ.get('USERNAME', 'unknown')}",
+        f"- Home: {Path.home()}",
+    ]
+    if uname.system == "Darwin":
+        lines.append(f"- macOS version: {platform.mac_ver()[0]}")
+    elif uname.system == "Linux":
+        try:
+            rel = platform.freedesktop_os_release()
+            lines.append(f"- Distro: {rel.get('PRETTY_NAME', 'Linux')}")
+        except Exception:
+            pass
+    elif uname.system == "Windows":
+        lines.append(f"- Windows: {platform.win32_ver()[0]}")
+    return "\n".join(lines)
+
+
 def build_system_prompt(config: dict) -> str:
     base = SYSPROMPT.read_text() if SYSPROMPT.exists() else "You are CLAWCLI, an AI coding assistant."
     base = base.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
     base = base.replace("{model}", config.get("model", "unknown"))
+    base = base.replace("{env_info}", detect_env_info())
     memory = load_memory()
     if memory.strip():
         base += f"\n\n## Your Persistent Memory\n{memory}"
