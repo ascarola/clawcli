@@ -3,7 +3,11 @@
 import os
 import subprocess  # nosec B404
 import shlex
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
+
+_audit_logger = logging.getLogger("clawcli.audit")
 
 
 def load_list(file_path: str) -> list[str]:
@@ -41,24 +45,37 @@ def execute_bash(
     allowed = load_list(base / "allowed_commands.txt")
     denied = load_list(base / "denied_commands.txt")
 
+    if not _audit_logger.handlers:
+        handler = logging.FileHandler(base / "audit.log")
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        _audit_logger.addHandler(handler)
+        _audit_logger.setLevel(logging.INFO)
+
+    timeout = min(timeout, 600)
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
     if is_denied(command, denied):
+        _audit_logger.info("%s BLOCKED %s", ts, command)
         return f"Error: Command blocked by denied_commands.txt: {command[:80]}"
 
     if not is_allowed(command, allowed) and confirm_callback:
         desc = description or command[:80]
         approved = confirm_callback(command, desc)
         if not approved:
+            _audit_logger.info("%s DENIED_BY_USER %s", ts, command)
             return "Command denied by user."
 
     try:
         result = subprocess.run(  # nosec B602 — shell=True is intentional; commands are gated by allow/deny lists and optional user confirmation
             command,
             shell=True,
+            executable="/bin/bash",
             capture_output=True,
             text=True,
             timeout=timeout,
             cwd=os.getcwd(),
         )
+        _audit_logger.info("%s EXIT=%d %s", ts, result.returncode, command)
         output = ""
         if result.stdout:
             output += result.stdout
@@ -70,6 +87,8 @@ def execute_bash(
             output += f"\n(exit code {result.returncode})"
         return output.strip() if output.strip() else "(no output)"
     except subprocess.TimeoutExpired:
+        _audit_logger.info("%s TIMEOUT %s", ts, command)
         return f"Error: Command timed out after {timeout}s"
     except Exception as e:
+        _audit_logger.info("%s ERROR %s | %s", ts, command, e)
         return f"Error executing command: {e}"

@@ -96,7 +96,7 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "The bash command to execute"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"},
+                    "timeout": {"type": "integer", "description": "Timeout in seconds (default 60, max 600). Set higher for long-running commands like nmap scans (e.g. 300)."},
                     "description": {"type": "string", "description": "Brief description of what this command does"}
                 },
                 "required": ["command"]

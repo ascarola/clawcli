@@ -78,7 +78,7 @@ def save_memory(section: str, content: str) -> str:
         if next_section == -1:
             text = text[:idx] + "\n" + f"- {content}\n" + text[idx:]
         else:
-            text = text[:idx] + "\n" + f"- {content}\n" + text[idx:]
+            text = text[:next_section] + "\n" + f"- {content}\n" + text[next_section:]
     else:
         text += f"\n## {section}\n- {content}\n"
     MEMORY_FILE.write_text(text)
@@ -108,11 +108,15 @@ def detect_env_info() -> str:
     return "\n".join(lines)
 
 
+def _sanitize_prompt_value(value: str) -> str:
+    return re.sub(r"[\r\n\x00-\x1f]", " ", value)
+
+
 def build_system_prompt(config: dict) -> str:
     base = SYSPROMPT.read_text() if SYSPROMPT.exists() else "You are CLAWCLI, an AI coding assistant."
     base = base.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
-    base = base.replace("{model}", config.get("model", "unknown"))
-    base = base.replace("{env_info}", detect_env_info())
+    base = base.replace("{model}", _sanitize_prompt_value(config.get("model", "unknown")))
+    base = base.replace("{env_info}", _sanitize_prompt_value(detect_env_info()))
     memory = load_memory()
     if memory.strip():
         base += f"\n\n## Your Persistent Memory\n{memory}"
@@ -315,6 +319,8 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
         # Execute all tool calls and collect results
         tool_results = []
+        last_call_hash = getattr(run_agentic_loop, "_last_call_hash", None)
+        loop_detected = False
         for tc in tool_calls:
             fn   = tc.get("function", {})
             name = fn.get("name", "")
@@ -328,6 +334,12 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             render_tool_call(name, args)
             result = dispatch_tool(name, args, config, confirm=config.get("confirm_bash", False))
 
+            call_hash = hash((name, json.dumps(args, sort_keys=True), result))
+            if call_hash == last_call_hash:
+                loop_detected = True
+                result = f"Loop detected: tool '{name}' returned the same result twice in a row. Try a different approach."
+            run_agentic_loop._last_call_hash = call_hash
+
             # Show brief result preview
             preview = result[:200] + "…" if len(result) > 200 else result
             console.print(f"[dim]  → {preview}[/dim]")
@@ -339,6 +351,8 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             })
 
         messages.extend(tool_results)
+        if loop_detected:
+            break
 
     return messages
 
@@ -698,13 +712,7 @@ def main():
             cwd_short = os.getcwd().replace(str(Path.home()), "~")
             user_input = session.prompt(f"\n[{cwd_short}] > ", default="")
         except KeyboardInterrupt:
-            console.print("\n[dim]Use /exit to quit or Ctrl+C again to force exit.[/dim]")
-            try:
-                session.prompt("  > ")
-            except KeyboardInterrupt:
-                save_session(session_id, messages, os.getcwd())
-                print_resume_hint(session_id)
-                sys.exit(0)
+            console.print("\n[dim]Cancelled. Type /exit to quit.[/dim]")
             continue
         except EOFError:
             save_session(session_id, messages, os.getcwd())

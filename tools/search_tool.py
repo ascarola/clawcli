@@ -3,6 +3,7 @@
 import re
 import json
 import ipaddress
+import socket
 import requests
 from urllib.parse import urlparse
 
@@ -21,10 +22,24 @@ _PRIVATE_NETS = [
 def _is_private_url(url: str) -> bool:
     try:
         host = urlparse(url).hostname or ""
-        addr = ipaddress.ip_address(host)
-        return any(addr in net for net in _PRIVATE_NETS)
-    except ValueError:
-        return False  # hostname (not raw IP) — allow; DNS pinning attacks out of scope
+        if not host:
+            return True
+        try:
+            addr = ipaddress.ip_address(host)
+            return any(addr in net for net in _PRIVATE_NETS)
+        except ValueError:
+            pass
+        # Hostname — resolve and validate the resulting IP
+        try:
+            resolved = socket.getaddrinfo(host, None)
+            return any(
+                any(ipaddress.ip_address(sockaddr[0]) in net for net in _PRIVATE_NETS)
+                for _, _, _, _, sockaddr in resolved
+            )
+        except socket.gaierror:
+            return True  # unresolvable host — block
+    except Exception:
+        return True
 
 
 def web_search(query: str, searxng_url: str, num_results: int = 10) -> str:
