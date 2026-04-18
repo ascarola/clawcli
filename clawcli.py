@@ -305,19 +305,20 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 def print_welcome(config: dict):
     model = config.get("model", "gemma4:26b")
     cwd   = os.getcwd()
-    logo = (
-        "[bold cyan] ██████╗██╗      █████╗ ██╗    ██╗[/bold cyan]\n"
-        "[bold cyan]██╔════╝██║     ██╔══██╗██║    ██║[/bold cyan]\n"
-        "[bold cyan]██║     ██║     ███████║██║ █╗ ██║[/bold cyan]\n"
-        "[bold cyan]██║     ██║     ██╔══██║██║███╗██║[/bold cyan]\n"
-        "[bold cyan]╚██████╗███████╗██║  ██║╚███╔███╔╝[/bold cyan]\n"
-        "[bold cyan] ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ [/bold cyan]  [bold white]CLI[/bold white]\n"
-        "\n"
-        f"[dim]model : {model}[/dim]\n"
-        f"[dim]cwd   : {cwd}[/dim]\n"
-        f"[dim]Type a task, 'research <topic>' to search, /help for commands[/dim]"
-    )
-    console.print(Panel(logo, border_style="cyan", padding=(0, 2)))
+    paw = [
+        " ▄▖▄▖▄▖   ",
+        "▐███████▌  ",
+        "▐███████▌  ",
+        " ▝▀▀▀▀▀▘   ",
+    ]
+    info = [
+        f"[bold white]CLAWCLI[/bold white] [dim]v1.0.0[/dim]",
+        f"[dim]{model} · Ollama[/dim]",
+        f"[dim]{cwd}[/dim]",
+        f"[dim]Type a task, 'research <topic>' to search, /help[/dim]",
+    ]
+    for logo_line, info_line in zip(paw, info):
+        console.print(f"[bold cyan]{logo_line}[/bold cyan]  {info_line}")
 
 
 def show_help():
