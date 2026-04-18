@@ -584,8 +584,11 @@ def do_update():
 
     if "Already up to date" not in output:
         console.print("[dim]Re-installing dependencies...[/dim]")
+        # Prefer venv pip if present, fall back to current interpreter
+        venv_pip = CLAWCLI_DIR / ".venv" / "bin" / "pip"
+        pip_cmd = [str(venv_pip)] if venv_pip.exists() else [sys.executable, "-m", "pip"]
         pip = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q", "-r", str(CLAWCLI_DIR / "requirements.txt")],
+            pip_cmd + ["install", "-q", "-r", str(CLAWCLI_DIR / "requirements.txt")],
             capture_output=True, text=True,
         )
         if pip.returncode != 0:

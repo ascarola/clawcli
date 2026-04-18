@@ -31,24 +31,6 @@ echo ""
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found. Install it and retry."; exit 1; }
 command -v git     >/dev/null 2>&1 || { echo "ERROR: git not found. Install it and retry."; exit 1; }
 
-# Ensure pip is available — auto-install if missing
-if ! python3 -m pip --version >/dev/null 2>&1; then
-    echo "==> pip not found — attempting to install..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get install -y python3-pip
-    elif command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y python3-pip
-    elif command -v pacman >/dev/null 2>&1; then
-        sudo pacman -Sy --noconfirm python-pip
-    elif command -v brew >/dev/null 2>&1; then
-        brew install python3
-    else
-        python3 -m ensurepip --upgrade || { echo "ERROR: Could not install pip. Install python3-pip manually and retry."; exit 1; }
-    fi
-    python3 -m pip --version >/dev/null 2>&1 || { echo "ERROR: pip install failed. Install python3-pip manually and retry."; exit 1; }
-    echo "    pip installed successfully"
-fi
-
 # ── Clone or update ───────────────────────────────────────────────────────────
 if [ -d "$INSTALL_DIR/.git" ]; then
     echo "==> Updating existing installation..."
@@ -63,15 +45,32 @@ else
     git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
-# ── Python dependencies ───────────────────────────────────────────────────────
-echo "==> Installing Python dependencies..."
-python3 -m pip install -q -r "$INSTALL_DIR/requirements.txt"
+# ── Virtualenv + Python dependencies ─────────────────────────────────────────
+VENV="$INSTALL_DIR/.venv"
+if [ ! -d "$VENV" ]; then
+    echo "==> Creating virtualenv..."
+    # python3-venv may need installing on Debian/Ubuntu
+    if ! python3 -m venv "$VENV" 2>/dev/null; then
+        if command -v apt-get >/dev/null 2>&1; then
+            echo "    Installing python3-venv..."
+            sudo apt-get install -y python3-venv python3-pip
+        elif command -v dnf >/dev/null 2>&1; then
+            sudo dnf install -y python3-pip
+        elif command -v pacman >/dev/null 2>&1; then
+            sudo pacman -Sy --noconfirm python-pip
+        fi
+        python3 -m venv "$VENV"
+    fi
+fi
+
+echo "==> Installing Python dependencies into virtualenv..."
+"$VENV/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
 
 # ── Generate machine-local config.json from defaults template ─────────────────
 DEFAULTS="$INSTALL_DIR/config.defaults.json"
 CONFIG="$INSTALL_DIR/config.json"
 if [ ! -f "$CONFIG" ]; then
-    python3 - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$SEARXNG_URL" <<'PYEOF'
+    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$SEARXNG_URL" <<'PYEOF'
 import sys, json
 defaults_path, out_path, ollama_url, searxng_url = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 with open(defaults_path) as f:
@@ -101,25 +100,31 @@ if [ ! -f "$INSTALL_DIR/memory/MEMORY.md" ]; then
 EOF
 fi
 
-# ── Symlink to PATH ───────────────────────────────────────────────────────────
-chmod +x "$INSTALL_DIR/clawcli.py"
+# ── Write launcher wrapper (uses venv Python) ─────────────────────────────────
+LAUNCHER="$INSTALL_DIR/clawcli"
+cat > "$LAUNCHER" <<WRAPPER
+#!/bin/bash
+exec "$VENV/bin/python3" "$INSTALL_DIR/clawcli.py" "\$@"
+WRAPPER
+chmod +x "$LAUNCHER"
 
-# On Apple Silicon, prefer /opt/homebrew/bin; fall back to /usr/local/bin then ~/.local/bin
+# ── Symlink launcher to PATH ──────────────────────────────────────────────────
+# On Apple Silicon, prefer /opt/homebrew/bin
 if [ "$(uname -s)" = "Darwin" ] && [ -d "/opt/homebrew/bin" ]; then
     BIN_LINK="/opt/homebrew/bin/clawcli"
 fi
 
 LINK_OK=0
 if [ -w "$(dirname "$BIN_LINK")" ]; then
-    ln -sf "$INSTALL_DIR/clawcli.py" "$BIN_LINK" && LINK_OK=1
+    ln -sf "$LAUNCHER" "$BIN_LINK" && LINK_OK=1
 elif sudo -n true 2>/dev/null; then
-    sudo ln -sf "$INSTALL_DIR/clawcli.py" "$BIN_LINK" && LINK_OK=1
+    sudo ln -sf "$LAUNCHER" "$BIN_LINK" && LINK_OK=1
 fi
 
 if [ "$LINK_OK" -eq 0 ]; then
     LOCAL_BIN="$HOME/.local/bin"
     mkdir -p "$LOCAL_BIN"
-    ln -sf "$INSTALL_DIR/clawcli.py" "$LOCAL_BIN/clawcli"
+    ln -sf "$LAUNCHER" "$LOCAL_BIN/clawcli"
     echo "==> Installed to $LOCAL_BIN/clawcli"
     echo "    Make sure $LOCAL_BIN is in your PATH:"
     echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""

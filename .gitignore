@@ -9,7 +9,7 @@ dist/
 build/
 .eggs/
 
-# Virtual environments
+# Virtual environments (created by install.sh)
 venv/
 .venv/
 env/
