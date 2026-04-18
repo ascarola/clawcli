@@ -48,6 +48,19 @@ def load_config() -> dict:
     return {}
 
 
+def detect_context_window(config: dict) -> None:
+    """Update config['context_window'] with the model's actual max from Ollama."""
+    try:
+        ollama_url = config.get("ollama_url", "http://192.168.1.62:11434")
+        info = requests.post(f"{ollama_url}/api/show", json={"name": config["model"]}, timeout=10).json()
+        model_info = info.get("model_info", {})
+        ctx = next((v for k, v in model_info.items() if "context_length" in k), None)
+        if ctx:
+            config["context_window"] = ctx
+    except Exception:
+        pass
+
+
 def load_memory() -> str:
     if MEMORY_FILE.exists():
         return MEMORY_FILE.read_text()
@@ -452,19 +465,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print(f"[red]Could not fetch models: {e}[/red]")
         elif arg:
             config["model"] = arg
-            # Auto-detect context window for the new model
-            try:
-                ollama_url = config.get("ollama_url", "http://192.168.1.62:11434")
-                info = requests.post(f"{ollama_url}/api/show", json={"name": arg}, timeout=10).json()
-                model_info = info.get("model_info", {})
-                ctx = next(
-                    (v for k, v in model_info.items() if "context_length" in k),
-                    None
-                )
-                if ctx:
-                    config["context_window"] = ctx
-            except Exception:
-                pass
+            detect_context_window(config)
             # Rebuild system message so the model knows its own name
             for m in messages:
                 if m.get("role") == "system":
@@ -584,6 +585,8 @@ def main():
         config["model"] = args.model
     if args.no_stream:
         config["stream"] = False
+
+    detect_context_window(config)
 
     system_prompt = build_system_prompt(config)
     messages = [{"role": "system", "content": system_prompt}]
