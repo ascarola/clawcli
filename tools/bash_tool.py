@@ -51,7 +51,7 @@ def execute_bash(
             return "Command denied by user."
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B602 — shell=True is intentional; commands are gated by allow/deny lists and optional user confirmation
             command,
             shell=True,
             capture_output=True,

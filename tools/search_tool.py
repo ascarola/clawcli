@@ -2,8 +2,29 @@
 
 import re
 import json
+import ipaddress
 import requests
-from urllib.parse import urljoin
+from urllib.parse import urlparse
+
+_PRIVATE_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+
+def _is_private_url(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname or ""
+        addr = ipaddress.ip_address(host)
+        return any(addr in net for net in _PRIVATE_NETS)
+    except ValueError:
+        return False  # hostname (not raw IP) — allow; DNS pinning attacks out of scope
 
 
 def web_search(query: str, searxng_url: str, num_results: int = 10) -> str:
@@ -43,6 +64,8 @@ def web_search(query: str, searxng_url: str, num_results: int = 10) -> str:
 
 
 def web_fetch(url: str, max_chars: int = 8000) -> str:
+    if _is_private_url(url):
+        return f"Error: Fetching private/internal addresses is not permitted: {url}"
     try:
         resp = requests.get(
             url,
