@@ -614,6 +614,7 @@ def main():
             console.print()
 
     # Interactive REPL
+    console.clear()
     print_welcome(config)
 
     kb = KeyBindings()
