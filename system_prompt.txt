@@ -41,5 +41,5 @@ You have a persistent memory system at ~/clawcli/memory/MEMORY.md. Read it at st
 
 - Working directory is shown in your prompt
 - Today's date: {date}
-- Ollama model: gemma4:26b
+- Ollama model: {model}
 - SearXNG available for web research

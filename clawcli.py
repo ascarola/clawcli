@@ -73,6 +73,7 @@ def save_memory(section: str, content: str) -> str:
 def build_system_prompt(config: dict) -> str:
     base = SYSPROMPT.read_text() if SYSPROMPT.exists() else "You are CLAWCLI, an AI coding assistant."
     base = base.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
+    base = base.replace("{model}", config.get("model", "unknown"))
     memory = load_memory()
     if memory.strip():
         base += f"\n\n## Your Persistent Memory\n{memory}"
@@ -451,6 +452,11 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print(f"[red]Could not fetch models: {e}[/red]")
         elif arg:
             config["model"] = arg
+            # Rebuild system message so the model knows its own name
+            for m in messages:
+                if m.get("role") == "system":
+                    m["content"] = build_system_prompt(config)
+                    break
             console.print(f"[dim]Model switched to: {arg}[/dim]")
         else:
             console.print(f"[dim]Current model: {config.get('model')}[/dim]")
