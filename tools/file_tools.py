@@ -3,7 +3,7 @@
 import os
 import re
 import glob as glob_module
-import subprocess
+import subprocess  # nosec B404
 from pathlib import Path
 
 

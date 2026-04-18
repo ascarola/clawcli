@@ -1,7 +1,7 @@
 """Bash execution tool with allow/deny list enforcement."""
 
 import os
-import subprocess
+import subprocess  # nosec B404
 import shlex
 from pathlib import Path
 

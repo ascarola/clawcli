@@ -567,7 +567,7 @@ def print_resume_hint(session_id: str):
 
 
 def do_update():
-    import subprocess
+    import subprocess  # nosec B404
 
     console.print("[dim]Updating CLAWCLI from origin/main...[/dim]")
     result = subprocess.run(  # nosec B603 B607 — fixed args, no user input
