@@ -29,8 +29,25 @@ echo ""
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found. Install it and retry."; exit 1; }
-command -v pip3    >/dev/null 2>&1 || { echo "ERROR: pip3 not found. Install python3-pip and retry."; exit 1; }
 command -v git     >/dev/null 2>&1 || { echo "ERROR: git not found. Install it and retry."; exit 1; }
+
+# Ensure pip is available — auto-install if missing
+if ! python3 -m pip --version >/dev/null 2>&1; then
+    echo "==> pip not found — attempting to install..."
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get install -y python3-pip
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y python3-pip
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm python-pip
+    elif command -v brew >/dev/null 2>&1; then
+        brew install python3
+    else
+        python3 -m ensurepip --upgrade || { echo "ERROR: Could not install pip. Install python3-pip manually and retry."; exit 1; }
+    fi
+    python3 -m pip --version >/dev/null 2>&1 || { echo "ERROR: pip install failed. Install python3-pip manually and retry."; exit 1; }
+    echo "    pip installed successfully"
+fi
 
 # ── Clone or update ───────────────────────────────────────────────────────────
 if [ -d "$INSTALL_DIR/.git" ]; then
@@ -48,7 +65,7 @@ fi
 
 # ── Python dependencies ───────────────────────────────────────────────────────
 echo "==> Installing Python dependencies..."
-pip3 install -q -r "$INSTALL_DIR/requirements.txt"
+python3 -m pip install -q -r "$INSTALL_DIR/requirements.txt"
 
 # ── Generate machine-local config.json from defaults template ─────────────────
 DEFAULTS="$INSTALL_DIR/config.defaults.json"
