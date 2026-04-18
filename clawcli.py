@@ -305,13 +305,19 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 def print_welcome(config: dict):
     model = config.get("model", "gemma4:26b")
     cwd   = os.getcwd()
-    console.print(Panel(
-        f"[bold white]CLAWCLI[/bold white]  [dim]powered by {model}[/dim]\n"
-        f"[dim]cwd: {cwd}[/dim]\n"
-        f"[dim]Type your task, 'research <topic>' to search, /help for commands, 'clawcli update' to update[/dim]",
-        border_style="blue",
-        padding=(0, 1),
-    ))
+    logo = (
+        "[bold cyan] ██████╗██╗      █████╗ ██╗    ██╗[/bold cyan]\n"
+        "[bold cyan]██╔════╝██║     ██╔══██╗██║    ██║[/bold cyan]\n"
+        "[bold cyan]██║     ██║     ███████║██║ █╗ ██║[/bold cyan]\n"
+        "[bold cyan]██║     ██║     ██╔══██║██║███╗██║[/bold cyan]\n"
+        "[bold cyan]╚██████╗███████╗██║  ██║╚███╔███╔╝[/bold cyan]\n"
+        "[bold cyan] ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ [/bold cyan]  [bold white]CLI[/bold white]\n"
+        "\n"
+        f"[dim]model : {model}[/dim]\n"
+        f"[dim]cwd   : {cwd}[/dim]\n"
+        f"[dim]Type a task, 'research <topic>' to search, /help for commands[/dim]"
+    )
+    console.print(Panel(logo, border_style="cyan", padding=(0, 2)))
 
 
 def show_help():
