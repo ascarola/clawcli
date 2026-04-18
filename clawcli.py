@@ -452,12 +452,25 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print(f"[red]Could not fetch models: {e}[/red]")
         elif arg:
             config["model"] = arg
+            # Auto-detect context window for the new model
+            try:
+                ollama_url = config.get("ollama_url", "http://192.168.1.62:11434")
+                info = requests.post(f"{ollama_url}/api/show", json={"name": arg}, timeout=10).json()
+                model_info = info.get("model_info", {})
+                ctx = next(
+                    (v for k, v in model_info.items() if "context_length" in k),
+                    None
+                )
+                if ctx:
+                    config["context_window"] = ctx
+            except Exception:
+                pass
             # Rebuild system message so the model knows its own name
             for m in messages:
                 if m.get("role") == "system":
                     m["content"] = build_system_prompt(config)
                     break
-            console.print(f"[dim]Model switched to: {arg}[/dim]")
+            console.print(f"[dim]Model switched to: {arg}  (context: {config['context_window']:,})[/dim]")
         else:
             console.print(f"[dim]Current model: {config.get('model')}[/dim]")
         return True, messages
