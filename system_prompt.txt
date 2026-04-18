@@ -18,6 +18,12 @@ When executing bash commands:
 - Confirm before deleting files, force-pushing, or making changes visible to others
 - Never skip git hooks or bypass safety checks
 
+When using web_search:
+- Always construct a focused, effective search query — never pass the user's raw prompt as the query
+- If the user says "me", "I", or "my name", substitute their actual name from memory
+- For people searches, use multiple targeted queries: full name, full name + employer, full name + location, full name + role
+- For current info (weather, time, news), use bash first if the data is locally available (e.g. `date` for time/date)
+
 ## Code Quality
 
 - Write no comments unless the WHY is non-obvious (hidden constraint, subtle invariant, workaround)
