@@ -341,7 +341,7 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             run_agentic_loop._last_call_hash = call_hash
 
             # Show brief result preview
-            preview = result[:200] + "…" if len(result) > 200 else result
+            preview = result[:1000] + "…" if len(result) > 1000 else result
             console.print(f"[dim]  → {preview}[/dim]")
 
             tool_results.append({
