@@ -31,6 +31,17 @@ echo ""
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found. Install it and retry."; exit 1; }
 command -v git     >/dev/null 2>&1 || { echo "ERROR: git not found. Install it and retry."; exit 1; }
 
+# On Debian/Ubuntu, proactively ensure venv and pip packages are present
+if command -v apt-get >/dev/null 2>&1; then
+    MISSING=""
+    python3 -m venv --help >/dev/null 2>&1 || MISSING="$MISSING python3-venv"
+    python3 -m pip --version >/dev/null 2>&1  || MISSING="$MISSING python3-pip"
+    if [ -n "$MISSING" ]; then
+        echo "==> Installing missing packages:$MISSING"
+        sudo apt-get install -y $MISSING
+    fi
+fi
+
 # ── Clone or update ───────────────────────────────────────────────────────────
 if [ -d "$INSTALL_DIR/.git" ]; then
     echo "==> Updating existing installation..."
