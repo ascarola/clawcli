@@ -104,12 +104,12 @@ def _rg_search(pattern, path, glob_pat, output_mode, case_insensitive, context_l
     if path:
         cmd.append(str(Path(path).expanduser().resolve()))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603 B607
         out = result.stdout.strip()
         return out if out else "No matches found"
     except subprocess.TimeoutExpired:
         return "Error: search timed out"
-    except Exception as e:
+    except OSError as e:
         return f"Error: {e}"
 
 
@@ -131,10 +131,10 @@ def _grep_search(pattern, path, glob_pat, output_mode, case_insensitive, context
     target = str(Path(path).expanduser().resolve()) if path else "."
     cmd.append(target)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603 B607
         out = result.stdout.strip()
         return out if out else "No matches found"
     except subprocess.TimeoutExpired:
         return "Error: search timed out"
-    except Exception as e:
+    except OSError as e:
         return f"Error: {e}"

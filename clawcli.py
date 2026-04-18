@@ -59,8 +59,8 @@ def detect_context_window(config: dict) -> None:
         ctx = next((v for k, v in model_info.items() if "context_length" in k), None)
         if ctx:
             config["context_window"] = ctx
-    except Exception:
-        pass
+    except (requests.RequestException, ValueError, KeyError):
+        pass  # Ollama unreachable or model unknown — keep config.json value
 
 
 def load_memory() -> str:
@@ -101,8 +101,8 @@ def detect_env_info() -> str:
         try:
             rel = platform.freedesktop_os_release()
             lines.append(f"- Distro: {rel.get('PRETTY_NAME', 'Linux')}")
-        except Exception:
-            pass
+        except OSError:
+            pass  # /etc/os-release absent on some minimal Linux installs
     elif uname.system == "Windows":
         lines.append(f"- Windows: {platform.win32_ver()[0]}")
     return "\n".join(lines)
@@ -570,7 +570,7 @@ def do_update():
     import subprocess
 
     console.print("[dim]Updating CLAWCLI from origin/main...[/dim]")
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603 B607 — fixed args, no user input
         ["git", "pull", "--ff-only", "origin", "main"],
         cwd=str(CLAWCLI_DIR),
         capture_output=True,
@@ -587,7 +587,7 @@ def do_update():
         # Prefer venv pip if present, fall back to current interpreter
         venv_pip = CLAWCLI_DIR / ".venv" / "bin" / "pip"
         pip_cmd = [str(venv_pip)] if venv_pip.exists() else [sys.executable, "-m", "pip"]
-        pip = subprocess.run(
+        pip = subprocess.run(  # nosec B603 B607 — fixed args, no user input
             pip_cmd + ["install", "-q", "-r", str(CLAWCLI_DIR / "requirements.txt")],
             capture_output=True, text=True,
         )
@@ -651,8 +651,8 @@ def main():
         session_id = args.resume
         try:
             os.chdir(saved_cwd)
-        except Exception:
-            pass
+        except OSError:
+            pass  # saved cwd no longer exists — stay in current directory
         console.print(f"\n[dim]Resumed session {session_id}[/dim]\n")
         for m in prior_messages:
             role = m.get("role")
