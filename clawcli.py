@@ -30,6 +30,11 @@ CLAWCLI_DIR  = Path(__file__).resolve().parent  # resolve symlink before .parent
 
 
 def get_version() -> str:
+    version_file = CLAWCLI_DIR / "VERSION"
+    if version_file.exists():
+        v = version_file.read_text().strip()
+        if v:
+            return v
     try:
         import subprocess
         result = subprocess.run(
