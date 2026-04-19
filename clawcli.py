@@ -612,6 +612,13 @@ def do_update():
         console.print("[red]Update failed.[/red]")
         sys.exit(1)
 
+    # Fetch tags separately — git pull doesn't reliably fetch them
+    subprocess.run(  # nosec B603 B607
+        ["git", "fetch", "--tags"],
+        cwd=str(CLAWCLI_DIR),
+        capture_output=True,
+    )
+
     if "Already up to date" not in output:
         console.print("[dim]Re-installing dependencies...[/dim]")
         # Prefer venv pip if present, fall back to current interpreter
