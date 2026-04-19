@@ -289,6 +289,7 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
     messages.append({"role": "user", "content": user_input})
 
+    last_call_hash = None  # reset per turn, not persisted across user messages
     for iteration in range(max_iters):
         try:
             response = chat(messages, config, stream=True)
@@ -319,7 +320,6 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
         # Execute all tool calls and collect results
         tool_results = []
-        last_call_hash = getattr(run_agentic_loop, "_last_call_hash", None)
         loop_detected = False
         for tc in tool_calls:
             fn   = tc.get("function", {})
@@ -338,7 +338,7 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             if call_hash == last_call_hash:
                 loop_detected = True
                 result = f"Loop detected: tool '{name}' returned the same result twice in a row. Try a different approach."
-            run_agentic_loop._last_call_hash = call_hash
+            last_call_hash = call_hash
 
             # Show brief result preview
             preview = result[:1000] + "…" if len(result) > 1000 else result
