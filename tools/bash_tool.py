@@ -20,9 +20,19 @@ def load_list(file_path: str) -> list[str]:
 
 def is_denied(command: str, denied: list[str]) -> bool:
     cmd = command.strip()
+    tokens = set(cmd.split())
     for pattern in denied:
-        if cmd.startswith(pattern) or pattern in cmd:
+        if cmd.startswith(pattern):
             return True
+        # Multi-word patterns: substring match (e.g. "rm -rf /")
+        # Single-word patterns: whole-token match to avoid false positives
+        # on filenames containing the pattern (e.g. "reboot" in "reboot-required")
+        if " " in pattern:
+            if pattern in cmd:
+                return True
+        else:
+            if pattern in tokens:
+                return True
     return False
 
 
