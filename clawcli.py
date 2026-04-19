@@ -27,6 +27,22 @@ from prompt_toolkit.key_binding import KeyBindings
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 CLAWCLI_DIR  = Path(__file__).resolve().parent  # resolve symlink before .parent
+
+
+def get_version() -> str:
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "-C", str(CLAWCLI_DIR), "describe", "--tags", "--always"],
+            capture_output=True, text=True, timeout=3,
+        )
+        v = result.stdout.strip()
+        return v if v else "unknown"
+    except Exception:
+        return "unknown"
+
+
+VERSION = get_version()
 CONFIG_FILE  = CLAWCLI_DIR / "config.json"
 MEMORY_FILE  = CLAWCLI_DIR / "memory" / "MEMORY.md"
 SYSPROMPT    = CLAWCLI_DIR / "system_prompt.txt"
@@ -367,7 +383,7 @@ def print_welcome(config: dict):
         " ▝▀▀▀▀▀▘   ",
     ]
     info = [
-        f"[bold white]CLAWCLI[/bold white] [dim]v1.0.0[/dim]",
+        f"[bold white]CLAWCLI[/bold white] [dim]{VERSION}[/dim]",
         f"[dim]{model} · Ollama[/dim]",
         f"[dim]{cwd}[/dim]",
         f"[dim]Type a task, 'research <topic>' to search, /help[/dim]",
@@ -620,7 +636,7 @@ def main():
     parser.add_argument("--no-stream", action="store_true", help="Disable streaming output")
     parser.add_argument("--resume", metavar="SESSION_ID", help="Resume a saved session")
     parser.add_argument("--continue", dest="resume_last", action="store_true", help="Resume the last saved session")
-    parser.add_argument("--version", action="version", version="CLAWCLI 1.0.0")
+    parser.add_argument("--version", action="version", version=f"CLAWCLI {VERSION}")
     args = parser.parse_args()
 
     config = load_config()
