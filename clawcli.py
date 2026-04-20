@@ -190,7 +190,7 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
         elif name == "bash":
             return execute_bash(
                 args["command"],
-                args.get("timeout", 60),
+                args.get("timeout", 300),
                 args.get("description"),
                 config_dir=str(CLAWCLI_DIR),
                 confirm_callback=confirm_bash if confirm else None,
@@ -218,7 +218,7 @@ def render_tool_call(name: str, args: dict):
     console.print(f"\n[bold cyan]⚙ {name}[/bold cyan] ", end="")
     key_args = {k: v for k, v in args.items() if k not in ("content",)}
     if key_args:
-        parts = [f"[dim]{k}=[/dim][white]{str(v)[:60]}[/white]" for k, v in key_args.items()]
+        parts = [f"[dim]{k}=[/dim][white]{str(v)[:200]}[/white]" for k, v in key_args.items()]
         console.print(" ".join(parts))
     else:
         console.print()
