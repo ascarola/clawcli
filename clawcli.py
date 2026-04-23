@@ -341,7 +341,6 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
         # Execute all tool calls and collect results
         tool_results = []
-        loop_detected = False
         for tc in tool_calls:
             fn   = tc.get("function", {})
             name = fn.get("name", "")
@@ -357,7 +356,6 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
             call_hash = hash((name, json.dumps(args, sort_keys=True), result))
             if call_hash == last_call_hash:
-                loop_detected = True
                 result = f"Loop detected: tool '{name}' returned the same result twice in a row. Try a different approach."
             last_call_hash = call_hash
 
@@ -372,8 +370,8 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             })
 
         messages.extend(tool_results)
-        if loop_detected:
-            break
+        # Don't break on loop detection — let the model see the message and pivot.
+        # max_iters caps runaway loops.
 
     return messages
 
