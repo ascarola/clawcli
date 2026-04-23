@@ -8,5 +8,6 @@
   "working_dir": null,
   "confirm_bash": false,
   "confirm_write": false,
-  "max_tool_iterations": 20
+  "max_tool_iterations": 20,
+  "ollama_timeout": 600
 }

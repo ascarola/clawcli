@@ -237,7 +237,7 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
             "num_ctx": config.get("context_window", 8192),
         },
     }
-    resp = requests.post(url, json=payload, stream=stream, timeout=300)
+    resp = requests.post(url, json=payload, stream=stream, timeout=config.get("ollama_timeout", 600))
     resp.raise_for_status()
 
     if not stream:
