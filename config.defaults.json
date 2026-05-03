@@ -1,0 +1,15 @@
+{
+  "model": "gemma4:27b",
+  "ollama_url": "http://localhost:11434",
+  "searxng_url": "",
+  "assistant_name": "CLAWCLI",
+  "user_name": "",
+  "temperature": 0.1,
+  "context_window": 131072,
+  "stream": true,
+  "working_dir": null,
+  "confirm_bash": false,
+  "confirm_write": false,
+  "max_tool_iterations": 20,
+  "ollama_timeout": 600
+}

@@ -1,0 +1,14 @@
+# Bash commands that are always blocked (one pattern per line)
+# Lines starting with # are comments
+rm -rf /
+rm -rf ~
+mkfs
+dd if=/dev/zero
+:(){ :|:& };:
+chmod -R 777 /
+chown -R root /
+> /dev/sda
+shutdown
+reboot
+halt
+poweroff

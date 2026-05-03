@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments (created by install.sh)
+venv/
+.venv/
+env/
+
+# Machine-specific config (generated from config.defaults.json by install.sh)
+config.json
+
+# Memory and sessions (personal — don't share)
+memory/MEMORY.md
+sessions/
+
+# Audit log (machine-local command log)
+audit.log
+
+# Shell history
+.clawcli_history
+*.history
+
+# Secrets / credentials
+.env
+*.secret
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
