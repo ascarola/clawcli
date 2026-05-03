@@ -291,8 +291,22 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
     tool_calls        = []
     prompt_tokens     = 0
     completion_tokens = 0
+    REPEAT_WINDOW     = 120  # chars to inspect for repetition
+    REPEAT_CHECK_EVERY = 30  # check every N chunks
+
+    def _is_repetitive(text: str) -> bool:
+        if len(text) < REPEAT_WINDOW:
+            return False
+        tail = text[-REPEAT_WINDOW:]
+        for pat_len in range(1, 8):
+            pat = tail[:pat_len]
+            expected = (pat * ((REPEAT_WINDOW // pat_len) + 1))[:REPEAT_WINDOW]
+            if tail == expected:
+                return True
+        return False
 
     console.print()
+    chunk_count = 0
     with Live(Spinner("dots", text="[dim]thinking…[/dim]"), console=console, refresh_per_second=12, vertical_overflow="visible") as live:
         for line in resp.iter_lines():
             if not line:
@@ -308,7 +322,14 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
 
             if delta_content:
                 full_content += delta_content
+                chunk_count  += 1
                 live.update(Markdown(full_content))
+
+                if chunk_count % REPEAT_CHECK_EVERY == 0 and _is_repetitive(full_content):
+                    resp.close()
+                    live.update(Markdown(full_content.rstrip()))
+                    console.print("\n[yellow]⚠ Runaway repetition detected — output truncated.[/yellow]")
+                    break
 
             if delta_tools:
                 tool_calls.extend(delta_tools)
