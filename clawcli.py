@@ -128,7 +128,24 @@ def load_memory() -> str:
     return ""
 
 
+def _sanitize_memory(value: str, max_len: int = 500) -> str:
+    value = value.strip()
+    value = re.sub(r"#+\s*", "", value)        # strip markdown headers
+    value = re.sub(r"\n{2,}", " ", value)       # collapse blank lines that break prompt structure
+    value = re.sub(r"[\x00-\x08\x0b-\x1f]", "", value)  # strip control chars (keep \t \n)
+    return value[:max_len]
+
+
+def _sanitize_section(value: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9 _-]", "", value)
+    return value[:60].strip()
+
+
 def save_memory(section: str, content: str) -> str:
+    section = _sanitize_section(section)
+    content = _sanitize_memory(content)
+    if not section or not content:
+        return "Memory not saved — empty section or content after sanitization."
     text = MEMORY_FILE.read_text() if MEMORY_FILE.exists() else "# CLAWCLI Memory\n\n"
     marker = f"## {section}"
     if marker in text:
