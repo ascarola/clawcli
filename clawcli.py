@@ -417,10 +417,10 @@ def print_welcome(config: dict):
     model = config.get("model", "gemma4:26b")
     cwd   = os.getcwd()
     claw = [
-        "▐▌  ▐▌  ▐▌ ",
-        " ▐▌▐██▌▐▌  ",
-        "  ▐█████▌  ",
-        "   ▝▀▀▀▘   ",
+        " ▲   ▲   ▲  ",
+        "▐█▌ ▐█▌ ▐█▌ ",
+        " ▐███████▌  ",
+        "  ▝█████▘   ",
     ]
     info = [
         f"[bold white]CLAWCLI[/bold white] [dim]{VERSION}[/dim]",
