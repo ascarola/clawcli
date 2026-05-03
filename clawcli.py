@@ -5,6 +5,8 @@ import os
 import sys
 import json
 import re
+import subprocess
+import threading
 import uuid
 import socket
 import platform
@@ -36,7 +38,6 @@ def get_version() -> str:
         if v:
             return v
     try:
-        import subprocess
         result = subprocess.run(
             ["git", "-C", str(CLAWCLI_DIR), "describe", "--tags", "--always"],
             capture_output=True, text=True, timeout=3,
@@ -56,6 +57,44 @@ SESSIONS_DIR = CLAWCLI_DIR / "sessions"
 
 # ── Console ──────────────────────────────────────────────────────────────────
 console = Console()
+
+
+def _start_update_check() -> threading.Thread:
+    """Fetch from origin in a background thread; check result with _finish_update_check()."""
+    result: list[str] = []
+
+    def _worker():
+        try:
+            r = subprocess.run(
+                ["git", "-C", str(CLAWCLI_DIR), "fetch", "--quiet", "origin"],
+                capture_output=True, timeout=5,
+            )
+            if r.returncode != 0:
+                return
+            local = subprocess.run(
+                ["git", "-C", str(CLAWCLI_DIR), "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+            remote = subprocess.run(
+                ["git", "-C", str(CLAWCLI_DIR), "rev-parse", "@{u}"],
+                capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+            if local and remote and local != remote:
+                result.append("available")
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.result = result  # type: ignore[attr-defined]
+    t.start()
+    return t
+
+
+def _finish_update_check(t: threading.Thread) -> None:
+    """Join the update thread (brief wait) and print notice if update is ready."""
+    t.join(timeout=0.2)
+    if getattr(t, "result", None) and t.result:  # type: ignore[attr-defined]
+        console.print("[dim]Update available — run [bold]clawcli update[/bold] to install.[/dim]")
 
 # ── Tool imports ─────────────────────────────────────────────────────────────
 sys.path.insert(0, str(CLAWCLI_DIR))
@@ -655,6 +694,8 @@ def main():
     if args.no_stream:
         config["stream"] = False
 
+    update_thread = _start_update_check()  # runs concurrently during startup
+
     detect_context_window(config)
 
     system_prompt = build_system_prompt(config)
@@ -708,6 +749,7 @@ def main():
     # Interactive REPL
     console.clear()
     print_welcome(config)
+    _finish_update_check(update_thread)
 
     kb = KeyBindings()
 
