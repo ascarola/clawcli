@@ -65,18 +65,16 @@ def _start_update_check() -> threading.Thread:
 
     def _worker():
         try:
+            # ls-remote checks remote HEAD without touching FETCH_HEAD or local refs
             r = subprocess.run(
-                ["git", "-C", str(CLAWCLI_DIR), "fetch", "--quiet", "origin"],
-                capture_output=True, timeout=5,
+                ["git", "-C", str(CLAWCLI_DIR), "ls-remote", "origin", "HEAD"],
+                capture_output=True, text=True, timeout=5,
             )
-            if r.returncode != 0:
+            if r.returncode != 0 or not r.stdout.strip():
                 return
+            remote = r.stdout.split()[0]
             local = subprocess.run(
                 ["git", "-C", str(CLAWCLI_DIR), "rev-parse", "HEAD"],
-                capture_output=True, text=True, timeout=2,
-            ).stdout.strip()
-            remote = subprocess.run(
-                ["git", "-C", str(CLAWCLI_DIR), "rev-parse", "@{u}"],
                 capture_output=True, text=True, timeout=2,
             ).stdout.strip()
             if local and remote and local != remote:
@@ -645,8 +643,6 @@ def print_resume_hint(session_id: str):
 
 
 def do_update():
-    import subprocess  # nosec B404
-
     console.print("[dim]Updating CLAWCLI from origin/main...[/dim]")
     result = subprocess.run(  # nosec B603 B607 — fixed args, no user input
         ["git", "pull", "--ff-only", "origin", "main"],
