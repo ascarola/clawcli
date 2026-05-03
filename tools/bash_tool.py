@@ -10,6 +10,12 @@ from pathlib import Path
 
 _audit_logger = logging.getLogger("clawcli.audit")
 
+_SECRET_RE = _re.compile(r'[A-Za-z0-9+/=]{50,}')
+
+
+def _redact(cmd: str) -> str:
+    return _SECRET_RE.sub("[REDACTED]", cmd)
+
 
 def load_list(file_path: str) -> list[str]:
     p = Path(file_path).expanduser()
@@ -77,14 +83,14 @@ def execute_bash(
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     if is_denied(command, denied):
-        _audit_logger.info("%s BLOCKED %s", ts, command)
+        _audit_logger.info("%s BLOCKED %s", ts, _redact(command))
         return f"Error: Command blocked by denied_commands.txt: {command[:80]}"
 
     if not is_allowed(command, allowed) and confirm_callback:
         desc = description or command[:80]
         approved = confirm_callback(command, desc)
         if not approved:
-            _audit_logger.info("%s DENIED_BY_USER %s", ts, command)
+            _audit_logger.info("%s DENIED_BY_USER %s", ts, _redact(command))
             return "Command denied by user."
 
     try:
@@ -97,7 +103,7 @@ def execute_bash(
             timeout=timeout,
             cwd=os.getcwd(),
         )
-        _audit_logger.info("%s EXIT=%d %s", ts, result.returncode, command)
+        _audit_logger.info("%s EXIT=%d %s", ts, result.returncode, _redact(command))
         output = ""
         if result.stdout:
             output += result.stdout
@@ -109,8 +115,8 @@ def execute_bash(
             output += f"\n(exit code {result.returncode})"
         return output.strip() if output.strip() else "(no output)"
     except subprocess.TimeoutExpired:
-        _audit_logger.info("%s TIMEOUT %s", ts, command)
+        _audit_logger.info("%s TIMEOUT %s", ts, _redact(command))
         return f"Error: Command timed out after {timeout}s"
     except Exception as e:
-        _audit_logger.info("%s ERROR %s | %s", ts, command, e)
+        _audit_logger.info("%s ERROR %s | %s", ts, _redact(command), e)
         return f"Error executing command: {e}"
