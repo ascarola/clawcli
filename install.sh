@@ -139,12 +139,34 @@ else
     if [ -z "$OLLAMA_MODEL" ]; then
         if [ "$IS_INTERACTIVE" -eq 1 ]; then
             echo ""
-            echo "  Suggested models (you must have these pulled in Ollama):"
-            echo "    gemma4:27b   — best quality, needs ~20GB VRAM"
-            echo "    llama3.1:8b  — good balance, needs ~6GB VRAM"
-            echo "    llama3.2:3b  — lightweight, runs on CPU"
+            OLLAMA_DEFAULT="gemma4:27b"
+            FETCHED_MODELS=$(curl -sf --max-time 5 "$OLLAMA_URL/api/tags" 2>/dev/null \
+                | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    models = data.get('models', [])
+    if models:
+        for m in models:
+            print('   ', m['name'])
+        # suggest first model as default
+        print('__DEFAULT__', models[0]['name'])
+except Exception:
+    pass
+" 2>/dev/null)
+            if [ -n "$FETCHED_MODELS" ]; then
+                FETCHED_DEFAULT=$(echo "$FETCHED_MODELS" | grep "^__DEFAULT__" | awk '{print $2}')
+                [ -n "$FETCHED_DEFAULT" ] && OLLAMA_DEFAULT="$FETCHED_DEFAULT"
+                echo "  Models available on $OLLAMA_URL:"
+                echo "$FETCHED_MODELS" | grep -v "^__DEFAULT__"
+            else
+                echo "  Suggested models (you must have these pulled in Ollama):"
+                echo "    gemma4:27b   — best quality, needs ~20GB VRAM"
+                echo "    llama3.1:8b  — good balance, needs ~6GB VRAM"
+                echo "    llama3.2:3b  — lightweight, runs on CPU"
+            fi
             echo ""
-            OLLAMA_MODEL=$(ask "  Ollama model" "gemma4:27b")
+            OLLAMA_MODEL=$(ask "  Ollama model" "$OLLAMA_DEFAULT")
         else
             OLLAMA_MODEL="gemma4:27b"
         fi
