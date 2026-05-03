@@ -6,7 +6,7 @@ import ipaddress
 import socket
 import concurrent.futures
 import requests
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 try:
     from curl_cffi import requests as _cffi_requests
@@ -26,29 +26,40 @@ _PRIVATE_NETS = [
 ]
 
 
-def _is_private_url(url: str) -> bool:
+def _is_private_ip(ip_str: str) -> bool:
     try:
-        host = urlparse(url).hostname or ""
+        addr = ipaddress.ip_address(ip_str)
+        return any(addr in net for net in _PRIVATE_NETS)
+    except ValueError:
+        return True
+
+
+def _resolve_url(url: str, timeout: float = 5.0) -> tuple[str, str] | None:
+    """Resolve url hostname to IP once. Returns (resolved_ip, host) or None if blocked/failed."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
         if not host:
-            return True
+            return None
+        # Already an IP literal — check it directly
         try:
-            addr = ipaddress.ip_address(host)
-            return any(addr in net for net in _PRIVATE_NETS)
+            if _is_private_ip(host):
+                return None
+            return (host, host)
         except ValueError:
             pass
-        # Hostname — resolve and validate the resulting IP (2s timeout to avoid DNS hangs)
-        try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(socket.getaddrinfo, host, None)
-                resolved = future.result(timeout=2)
-            return any(
-                any(ipaddress.ip_address(sockaddr[0]) in net for net in _PRIVATE_NETS)
-                for _, _, _, _, sockaddr in resolved
-            )
-        except (socket.gaierror, concurrent.futures.TimeoutError):
-            return True  # unresolvable or slow DNS — block
-    except Exception:
-        return True
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            addrs = future.result(timeout=timeout)
+        if not addrs:
+            return None
+        ip = addrs[0][4][0]
+        if _is_private_ip(ip):
+            return None
+        return (ip, host)
+    except (socket.gaierror, concurrent.futures.TimeoutError, Exception):
+        return None
 
 
 def web_search(query: str, searxng_url: str, num_results: int = 10) -> str:
@@ -90,11 +101,22 @@ def web_search(query: str, searxng_url: str, num_results: int = 10) -> str:
 
 
 def web_fetch(url: str, max_chars: int = 8000) -> str:
-    if _is_private_url(url):
+    # Resolve DNS once and pin the IP — prevents DNS rebinding (check and connect use same address)
+    resolved = _resolve_url(url)
+    if resolved is None:
         return f"Error: Fetching private/internal addresses is not permitted: {url}"
+    ip, host = resolved
+    parsed = urlparse(url)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
         if _CURL_CFFI_AVAILABLE:
-            resp = _cffi_requests.get(url, impersonate="chrome", timeout=20)
+            # Pass resolve hint so curl uses the already-checked IP
+            resp = _cffi_requests.get(
+                url,
+                impersonate="chrome",
+                timeout=20,
+                resolve=[f"{host}:{port}:{ip}"],
+            )
         else:
             resp = requests.get(
                 url,
