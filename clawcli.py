@@ -438,6 +438,7 @@ def show_help():
     console.print(Panel(
         "[bold]Commands:[/bold]\n"
         "  /help          — show this help\n"
+        "  /update        — pull latest version (restart to apply)\n"
         "  /memory        — show current memory\n"
         "  /clear         — clear conversation history\n"
         "  /compact       — summarize history to free context window\n"
@@ -572,6 +573,11 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
             console.print(f"[dim]Model switched to: {arg}  (context: {config['context_window']:,})[/dim]")
         else:
             console.print(f"[dim]Current model: {config.get('model')}[/dim]")
+        return True, messages
+
+    elif command == "/update":
+        do_update()
+        console.print("[dim]Restart clawcli to run the new version.[/dim]")
         return True, messages
 
     elif command in ("/exit", "/quit", "/q"):
