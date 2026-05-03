@@ -28,7 +28,7 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-CLAWCLI_DIR  = Path(__file__).resolve().parent  # resolve symlink before .parent
+CLAWCLI_DIR = Path(__file__).resolve().parent  # resolve symlink before .parent
 
 
 def get_version() -> str:
