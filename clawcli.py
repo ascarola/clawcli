@@ -416,11 +416,11 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 def print_welcome(config: dict):
     model = config.get("model", "gemma4:26b")
     cwd   = os.getcwd()
-    paw = [
-        " ▄▖▄▖▄▖   ",
-        "▐███████▌  ",
-        "▐███████▌  ",
-        " ▝▀▀▀▀▀▘   ",
+    claw = [
+        "▐▌  ▐▌  ▐▌ ",
+        " ▐▌▐██▌▐▌  ",
+        "  ▐█████▌  ",
+        "   ▝▀▀▀▘   ",
     ]
     info = [
         f"[bold white]CLAWCLI[/bold white] [dim]{VERSION}[/dim]",
@@ -428,8 +428,8 @@ def print_welcome(config: dict):
         f"[dim]{cwd}[/dim]",
         f"[dim]Type a task, 'research <topic>' to search, /help[/dim]",
     ]
-    for logo_line, info_line in zip(paw, info):
-        console.print(f"[bold cyan]{logo_line}[/bold cyan]  {info_line}")
+    for logo_line, info_line in zip(claw, info):
+        console.print(f"[bold red]{logo_line}[/bold red]  {info_line}")
 
 
 def show_help():
