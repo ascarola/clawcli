@@ -695,7 +695,7 @@ def do_doctor(config: dict):
         resp.raise_for_status()
         models = [m["name"] for m in resp.json().get("models", [])]
         console.print(f"[green]✓[/green]  Ollama reachable at {ollama_url}")
-        if any(m == model or m.startswith(model.split(":")[0]) for m in models):
+        if model in models:
             console.print(f"[green]✓[/green]  Model '{model}' available")
         else:
             console.print(f"[yellow]![/yellow]  Model '{model}' not found on this server")
