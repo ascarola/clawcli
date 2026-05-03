@@ -6,9 +6,43 @@ import glob as glob_module
 import subprocess  # nosec B404
 from pathlib import Path
 
+# Sensitive paths that are always blocked from read/write
+_BLOCKED_PATHS = [
+    Path("/etc/shadow"),
+    Path("/etc/gshadow"),
+    Path("/etc/master.passwd"),
+]
+
+_BLOCKED_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".ppk"}
+
+_BLOCKED_DIRS = [
+    Path.home() / ".ssh",
+    Path.home() / ".secrets",
+    Path.home() / ".gnupg",
+    Path("/root/.ssh"),
+    Path("/root/.secrets"),
+    Path("/root/.gnupg"),
+]
+
+
+def _is_sensitive(path: Path) -> bool:
+    if path in _BLOCKED_PATHS:
+        return True
+    if path.suffix.lower() in _BLOCKED_SUFFIXES:
+        return True
+    for blocked in _BLOCKED_DIRS:
+        try:
+            path.relative_to(blocked)
+            return True
+        except ValueError:
+            pass
+    return False
+
 
 def read_file(file_path: str, offset: int = None, limit: int = None) -> str:
     path = Path(file_path).expanduser().resolve()
+    if _is_sensitive(path):
+        return f"Error: Reading {file_path} is not permitted — sensitive path blocked."
     if not path.exists():
         return f"Error: File not found: {file_path}"
     if not path.is_file():
@@ -28,6 +62,8 @@ def read_file(file_path: str, offset: int = None, limit: int = None) -> str:
 
 def write_file(file_path: str, content: str) -> str:
     path = Path(file_path).expanduser().resolve()
+    if _is_sensitive(path):
+        return f"Error: Writing {file_path} is not permitted — sensitive path blocked."
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
@@ -39,6 +75,8 @@ def write_file(file_path: str, content: str) -> str:
 
 def edit_file(file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
     path = Path(file_path).expanduser().resolve()
+    if _is_sensitive(path):
+        return f"Error: Editing {file_path} is not permitted — sensitive path blocked."
     if not path.exists():
         return f"Error: File not found: {file_path}"
     try:
