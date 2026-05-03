@@ -178,7 +178,12 @@ def build_system_prompt(config: dict) -> str:
     base = base.replace("{env_info}", _sanitize_prompt_value(detect_env_info()))
     memory = load_memory()
     if memory.strip():
-        base += f"\n\n## Your Persistent Memory\n{memory}"
+        mem_block = f"\n\n## Persistent Memory\n{memory}"
+        # Insert before ## Environment so memory appears early, not buried at the tail
+        if "\n## Environment" in base:
+            base = base.replace("\n## Environment", mem_block + "\n## Environment", 1)
+        else:
+            base += mem_block
     return base
 
 
