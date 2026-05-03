@@ -78,7 +78,7 @@ Switch models at any time with `/model llama3.1:8b` or `--model llama3.1:8b`.
 | `temperature` | `0.1` | Model temperature |
 | `context_window` | auto-detected | Tokens; read from Ollama at startup |
 | `stream` | `true` | Streaming output |
-| `confirm_bash` | `false` | Prompt before unapproved bash commands |
+| `confirm_bash` | `true` | Prompt before unapproved bash commands |
 | `confirm_write` | `false` | Prompt before writing files |
 | `max_tool_iterations` | `20` | Max agentic loop iterations per turn |
 | `ollama_timeout` | `600` | HTTP timeout in seconds for Ollama requests |

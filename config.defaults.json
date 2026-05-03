@@ -8,7 +8,7 @@
   "context_window": 131072,
   "stream": true,
   "working_dir": null,
-  "confirm_bash": false,
+  "confirm_bash": true,
   "confirm_write": false,
   "max_tool_iterations": 20,
   "ollama_timeout": 600

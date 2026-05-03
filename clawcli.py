@@ -454,6 +454,8 @@ def print_welcome(config: dict):
     console.print(f"[dim]{model} · Ollama[/dim]")
     console.print(f"[dim]{cwd}[/dim]")
     console.print(f"[dim]Type a task, 'research <topic>' to search, /help[/dim]")
+    if not config.get("confirm_bash", True):
+        console.print("[yellow]⚠  confirm_bash is disabled — all commands run without prompting[/yellow]")
 
 
 def show_help():

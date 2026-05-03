@@ -1,5 +1,7 @@
 # Bash commands that run without confirmation (one pattern per line, supports prefix matching)
 # Lines starting with # are comments
+# Note: execution-capable tools (python3, curl, pip, wget, etc.) are intentionally excluded
+# so they require confirmation when confirm_bash=true.
 ls
 pwd
 cat
@@ -24,8 +26,6 @@ git log
 git diff
 git branch
 git show
-git fetch
-git pull
 find
 grep
 rg
@@ -39,15 +39,7 @@ tr
 cut
 xargs
 jq
-python3
-pip3
-pip
-node
-npm
-curl
-wget
 ping
-nmap
 netstat
 ss
 ip
@@ -57,7 +49,3 @@ journalctl
 docker ps
 docker images
 docker logs
-make
-cmake
-cargo
-go
