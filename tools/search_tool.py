@@ -8,6 +8,12 @@ import concurrent.futures
 import requests
 from urllib.parse import urlparse
 
+try:
+    from curl_cffi import requests as _cffi_requests
+    _CURL_CFFI_AVAILABLE = True
+except ImportError:
+    _CURL_CFFI_AVAILABLE = False
+
 _PRIVATE_NETS = [
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
@@ -85,14 +91,17 @@ def web_fetch(url: str, max_chars: int = 8000) -> str:
     if _is_private_url(url):
         return f"Error: Fetching private/internal addresses is not permitted: {url}"
     try:
-        resp = requests.get(
-            url,
-            timeout=20,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; CLAWCLI/1.0)",
-                "Accept": "text/html,application/xhtml+xml,text/plain",
-            },
-        )
+        if _CURL_CFFI_AVAILABLE:
+            resp = _cffi_requests.get(url, impersonate="chrome", timeout=20)
+        else:
+            resp = requests.get(
+                url,
+                timeout=20,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; CLAWCLI/1.0)",
+                    "Accept": "text/html,application/xhtml+xml,text/plain",
+                },
+            )
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
         if "json" in content_type:
@@ -103,7 +112,5 @@ def web_fetch(url: str, max_chars: int = 8000) -> str:
         text = re.sub(r"<[^>]+>", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         return text[:max_chars]
-    except requests.RequestException as e:
-        return f"Fetch error: {e}"
     except Exception as e:
-        return f"Error: {e}"
+        return f"Fetch error: {e}"
