@@ -98,6 +98,12 @@ clawcli "research llama 3.3 benchmarks"
 # Override model for this session
 clawcli --model llama3.2:3b
 
+# Run without bash confirmation for this session (overrides config)
+clawcli --no-confirm
+
+# Force bash confirmation for this session (overrides config)
+clawcli --confirm
+
 # Resume last session
 clawcli --continue
 

@@ -476,7 +476,9 @@ def show_help():
         "  research <topic>  — search SearXNG then summarize\n\n"
         "[bold]Sessions:[/bold]\n"
         "  clawcli sessions             — list saved sessions\n"
-        "  clawcli --resume <id>        — resume a session\n\n"
+        "  clawcli --resume <id>        — resume a session\n"
+        "  clawcli --no-confirm         — skip bash confirmation this session\n"
+        "  clawcli --confirm            — force bash confirmation this session\n\n"
         "[bold]Key bindings:[/bold]\n"
         "  Enter           — submit\n"
         "  Shift+Enter     — newline (iTerm2/kitty; see README for Terminal.app setup)\n"
@@ -848,6 +850,8 @@ def main():
     parser.add_argument("--no-stream", action="store_true", help="Disable streaming output")
     parser.add_argument("--resume", metavar="SESSION_ID", help="Resume a saved session")
     parser.add_argument("--continue", dest="resume_last", action="store_true", help="Resume the last saved session")
+    parser.add_argument("--confirm", action="store_true", default=None, help="Require confirmation before running bash commands")
+    parser.add_argument("--no-confirm", action="store_true", help="Run bash commands without confirmation (overrides config)")
     parser.add_argument("--version", action="version", version=f"CLAWCLI {VERSION}")
     args = parser.parse_args()
 
@@ -856,6 +860,10 @@ def main():
         config["model"] = args.model
     if args.no_stream:
         config["stream"] = False
+    if args.no_confirm:
+        config["confirm_bash"] = False
+    elif args.confirm:
+        config["confirm_bash"] = True
 
     update_thread = _start_update_check()  # runs concurrently during startup
 
