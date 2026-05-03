@@ -112,7 +112,7 @@ def load_config() -> dict:
 def detect_context_window(config: dict) -> None:
     """Update config['context_window'] with the model's actual max from Ollama."""
     try:
-        ollama_url = config.get("ollama_url", "http://192.168.1.62:11434")
+        ollama_url = config.get("ollama_url", "http://localhost:11434")
         info = requests.post(f"{ollama_url}/api/show", json={"name": config["model"]}, timeout=10).json()
         model_info = info.get("model_info", {})
         ctx = next((v for k, v in model_info.items() if "context_length" in k), None)
@@ -205,8 +205,8 @@ def confirm_bash(command: str, description: str) -> bool:
 
 
 def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) -> str:
-    ollama_url  = config.get("ollama_url", "http://192.168.1.62:11434")
-    searxng_url = config.get("searxng_url", "http://192.168.1.140:8888")
+    ollama_url  = config.get("ollama_url", "http://localhost:11434")
+    searxng_url = config.get("searxng_url", "")
 
     try:
         if name == "read_file":
@@ -274,7 +274,7 @@ def render_tool_call(name: str, args: dict):
 
 
 def chat(messages: list, config: dict, stream: bool = True) -> dict:
-    url   = config.get("ollama_url", "http://192.168.1.62:11434") + "/api/chat"
+    url   = config.get("ollama_url", "http://localhost:11434") + "/api/chat"
     model = config.get("model", "gemma4:26b")
     payload = {
         "model": model,
@@ -369,7 +369,7 @@ def extract_research_query(text: str) -> str:
 
 
 def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
-    searxng_url = config.get("searxng_url", "http://192.168.1.140:8888")
+    searxng_url = config.get("searxng_url", "")
     max_iters   = config.get("max_tool_iterations", 20)
 
     if is_research_prompt(user_input):
@@ -570,7 +570,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
 
     elif command == "/model":
         if arg == "list":
-            ollama_url = config.get("ollama_url", "http://192.168.1.62:11434")
+            ollama_url = config.get("ollama_url", "http://localhost:11434")
             try:
                 data = requests.get(f"{ollama_url}/api/tags", timeout=10).json()
                 models = data.get("models", [])
