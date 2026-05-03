@@ -1,6 +1,7 @@
 """Bash execution tool with allow/deny list enforcement."""
 
 import os
+import re as _re
 import subprocess  # nosec B404
 import shlex
 import logging
@@ -18,20 +19,31 @@ def load_list(file_path: str) -> list[str]:
     return [l.strip() for l in lines if l.strip() and not l.strip().startswith("#")]
 
 
+def _exec_tokens(cmd: str) -> set[str]:
+    """Return the first word of each pipeline segment (the actual executables)."""
+    parts = _re.split(r'&&|\|\||;|\|', cmd)
+    result = set()
+    for part in parts:
+        first = part.strip().split()
+        if first:
+            result.add(first[0])
+    return result
+
+
 def is_denied(command: str, denied: list[str]) -> bool:
     cmd = command.strip()
-    tokens = set(cmd.split())
+    exec_tokens = _exec_tokens(cmd)
     for pattern in denied:
         if cmd.startswith(pattern):
             return True
         # Multi-word patterns: substring match (e.g. "rm -rf /")
-        # Single-word patterns: whole-token match to avoid false positives
-        # on filenames containing the pattern (e.g. "reboot" in "reboot-required")
+        # Single-word patterns: check executable tokens only — avoids false positives
+        # on argument words (e.g. "reboot" inside `echo "No reboot flag found"`)
         if " " in pattern:
             if pattern in cmd:
                 return True
         else:
-            if pattern in tokens:
+            if pattern in exec_tokens:
                 return True
     return False
 
