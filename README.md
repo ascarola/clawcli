@@ -73,6 +73,8 @@ Switch models at any time with `/model llama3.1:8b` or `--model llama3.1:8b`.
 | `model` | `gemma4:27b` | Ollama model |
 | `ollama_url` | `http://localhost:11434` | Ollama server URL |
 | `searxng_url` | `""` | SearXNG URL (leave empty to disable) |
+| `assistant_name` | `CLAWCLI` | Name shown in the banner and used by the model |
+| `user_name` | `""` | Your name — model will address you by it |
 | `temperature` | `0.1` | Model temperature |
 | `context_window` | auto-detected | Tokens; read from Ollama at startup |
 | `stream` | `true` | Streaming output |

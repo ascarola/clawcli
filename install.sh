@@ -183,21 +183,40 @@ except Exception:
         fi
     fi
 
+    # Personalization (optional)
+    if [ -z "$ASSISTANT_NAME" ]; then
+        ASSISTANT_NAME="CLAWCLI"
+        if [ "$IS_INTERACTIVE" -eq 1 ]; then
+            echo ""
+            ASSISTANT_NAME=$(ask "  What would you like to name your assistant?" "CLAWCLI")
+        fi
+    fi
+    if [ -z "$USER_NAME" ]; then
+        USER_NAME=""
+        if [ "$IS_INTERACTIVE" -eq 1 ]; then
+            USER_NAME=$(ask "  How should the assistant address you? (leave blank to skip)" "")
+        fi
+    fi
+
     echo ""
     echo "  Settings:"
-    echo "    Ollama URL:  $OLLAMA_URL"
-    echo "    Model:       $OLLAMA_MODEL"
-    echo "    SearXNG:     ${SEARXNG_URL:-not configured}"
+    echo "    Ollama URL:       $OLLAMA_URL"
+    echo "    Model:            $OLLAMA_MODEL"
+    echo "    SearXNG:          ${SEARXNG_URL:-not configured}"
+    echo "    Assistant name:   $ASSISTANT_NAME"
+    echo "    Your name:        ${USER_NAME:-not set}"
     echo ""
 
-    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$SEARXNG_URL" <<'PYEOF'
+    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$SEARXNG_URL" "$ASSISTANT_NAME" "$USER_NAME" <<'PYEOF'
 import sys, json
-defaults_path, out_path, ollama_url, model, searxng_url = sys.argv[1:]
+defaults_path, out_path, ollama_url, model, searxng_url, assistant_name, user_name = sys.argv[1:]
 with open(defaults_path) as f:
     cfg = json.load(f)
-cfg["ollama_url"]  = ollama_url
-cfg["model"]       = model
-cfg["searxng_url"] = searxng_url
+cfg["ollama_url"]      = ollama_url
+cfg["model"]           = model
+cfg["searxng_url"]     = searxng_url
+cfg["assistant_name"]  = assistant_name
+cfg["user_name"]       = user_name
 with open(out_path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
@@ -207,8 +226,9 @@ fi
 
 # ── Ensure memory file exists ─────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR/memory"
-if [ ! -f "$INSTALL_DIR/memory/MEMORY.md" ]; then
-    cat > "$INSTALL_DIR/memory/MEMORY.md" <<'EOF'
+MEMORY_FILE="$INSTALL_DIR/memory/MEMORY.md"
+if [ ! -f "$MEMORY_FILE" ]; then
+    cat > "$MEMORY_FILE" <<'EOF'
 # CLAWCLI Memory
 
 ## User Preferences
@@ -217,6 +237,13 @@ if [ ! -f "$INSTALL_DIR/memory/MEMORY.md" ]; then
 
 ## Important Facts
 EOF
+fi
+
+# Write user name into memory if provided
+if [ -n "$USER_NAME" ]; then
+    if ! grep -q "User's name:" "$MEMORY_FILE" 2>/dev/null; then
+        printf "\n## About the User\n- User's name: %s\n" "$USER_NAME" >> "$MEMORY_FILE"
+    fi
 fi
 
 # ── Write launcher wrapper ────────────────────────────────────────────────────

@@ -2,6 +2,8 @@
   "model": "gemma4:27b",
   "ollama_url": "http://localhost:11434",
   "searxng_url": "",
+  "assistant_name": "CLAWCLI",
+  "user_name": "",
   "temperature": 0.1,
   "context_window": 131072,
   "stream": true,

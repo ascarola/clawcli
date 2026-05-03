@@ -176,6 +176,11 @@ def build_system_prompt(config: dict) -> str:
     base = base.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
     base = base.replace("{model}", _sanitize_prompt_value(config.get("model", "unknown")))
     base = base.replace("{env_info}", _sanitize_prompt_value(detect_env_info()))
+    assistant_name = _sanitize_prompt_value(config.get("assistant_name", "CLAWCLI"))
+    user_name      = _sanitize_prompt_value(config.get("user_name", ""))
+    base = base.replace("CLAWCLI", assistant_name)
+    if user_name:
+        base += f"\n\nThe user's name is {user_name}. Address them by name naturally."
     if not config.get("searxng_url"):
         base += "\n\nNote: SearXNG is not configured — web_search is unavailable. Do not attempt research prompts or suggest web searches."
     memory = load_memory()
@@ -442,9 +447,10 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
 
 def print_welcome(config: dict):
-    model = config.get("model", "gemma4:26b")
-    cwd   = os.getcwd()
-    console.print(f"🦞 [bold white]CLAWCLI[/bold white] [dim]{VERSION}[/dim]")
+    model  = config.get("model", "gemma4:26b")
+    name   = config.get("assistant_name", "CLAWCLI")
+    cwd    = os.getcwd()
+    console.print(f"🦞 [bold white]{name}[/bold white] [dim]{VERSION}[/dim]")
     console.print(f"[dim]{model} · Ollama[/dim]")
     console.print(f"[dim]{cwd}[/dim]")
     console.print(f"[dim]Type a task, 'research <topic>' to search, /help[/dim]")
