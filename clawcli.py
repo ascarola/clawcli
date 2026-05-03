@@ -176,10 +176,11 @@ def build_system_prompt(config: dict) -> str:
     base = base.replace("{date}", datetime.now().strftime("%Y-%m-%d"))
     base = base.replace("{model}", _sanitize_prompt_value(config.get("model", "unknown")))
     base = base.replace("{env_info}", _sanitize_prompt_value(detect_env_info()))
+    if not config.get("searxng_url"):
+        base += "\n\nNote: SearXNG is not configured — web_search is unavailable. Do not attempt research prompts or suggest web searches."
     memory = load_memory()
     if memory.strip():
         mem_block = f"\n\n## Persistent Memory\n{memory}"
-        # Insert before ## Environment so memory appears early, not buried at the tail
         if "\n## Environment" in base:
             base = base.replace("\n## Environment", mem_block + "\n## Environment", 1)
         else:
@@ -454,6 +455,7 @@ def show_help():
         "[bold]Commands:[/bold]\n"
         "  /help          — show this help\n"
         "  /update        — pull latest version (restart to apply)\n"
+        "  /doctor        — check Ollama, SearXNG, and dependencies\n"
         "  /memory        — show current memory\n"
         "  /clear         — clear conversation history\n"
         "  /compact       — summarize history to free context window\n"
@@ -595,6 +597,10 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         console.print("[dim]Restart clawcli to run the new version.[/dim]")
         return True, messages
 
+    elif command == "/doctor":
+        do_doctor(config)
+        return True, messages
+
     elif command in ("/exit", "/quit", "/q"):
         if session_id:
             save_session(session_id, messages, os.getcwd())
@@ -659,6 +665,86 @@ def print_resume_hint(session_id: str):
     console.print(f"[bold cyan]  clawcli --resume {session_id}[/bold cyan]")
 
 
+def do_doctor(config: dict):
+    import sys as _sys
+    console.print("\n[bold]CLAWCLI Doctor[/bold]  [dim]checking your setup...[/dim]\n")
+    issues = 0
+
+    # Python version
+    pv = _sys.version_info
+    if pv >= (3, 10):
+        console.print(f"[green]✓[/green]  Python {pv.major}.{pv.minor}.{pv.micro}")
+    else:
+        console.print(f"[red]✗[/red]  Python {pv.major}.{pv.minor}.{pv.micro} — 3.10+ required")
+        issues += 1
+
+    # curl_cffi
+    try:
+        import curl_cffi as _cc
+        console.print(f"[green]✓[/green]  curl_cffi {_cc.__version__} (Cloudflare bypass enabled)")
+    except ImportError:
+        console.print("[yellow]![/yellow]  curl_cffi not installed — web_fetch may be blocked by bot-detection")
+        console.print("     Fix: pip install curl_cffi")
+        issues += 1
+
+    # Ollama
+    ollama_url = config.get("ollama_url", "http://localhost:11434")
+    model      = config.get("model", "")
+    try:
+        resp   = requests.get(f"{ollama_url}/api/tags", timeout=5)
+        resp.raise_for_status()
+        models = [m["name"] for m in resp.json().get("models", [])]
+        console.print(f"[green]✓[/green]  Ollama reachable at {ollama_url}")
+        if any(m == model or m.startswith(model.split(":")[0]) for m in models):
+            console.print(f"[green]✓[/green]  Model '{model}' available")
+        else:
+            console.print(f"[yellow]![/yellow]  Model '{model}' not found on this server")
+            if models:
+                console.print(f"     Available: {', '.join(models[:6])}")
+            console.print(f"     Fix: ollama pull {model}")
+            issues += 1
+    except Exception as e:
+        console.print(f"[red]✗[/red]  Cannot reach Ollama at {ollama_url}")
+        console.print(f"     {e}")
+        issues += 1
+
+    # SearXNG (optional)
+    searxng_url = config.get("searxng_url", "")
+    if searxng_url:
+        try:
+            resp = requests.get(
+                f"{searxng_url.rstrip('/')}/search",
+                params={"q": "test", "format": "json"},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            console.print(f"[green]✓[/green]  SearXNG reachable at {searxng_url}")
+        except Exception as e:
+            console.print(f"[red]✗[/red]  SearXNG unreachable at {searxng_url}: {e}")
+            issues += 1
+    else:
+        console.print("[dim]-[/dim]  SearXNG not configured (web search disabled — optional)")
+
+    # Config file
+    if CONFIG_FILE.exists():
+        console.print(f"[green]✓[/green]  Config: {CONFIG_FILE}")
+    else:
+        console.print(f"[yellow]![/yellow]  No config.json — run install.sh or copy from config.defaults.json")
+        issues += 1
+
+    # Memory
+    if MEMORY_FILE.exists():
+        console.print(f"[green]✓[/green]  Memory: {MEMORY_FILE} ({MEMORY_FILE.stat().st_size} bytes)")
+    else:
+        console.print("[dim]-[/dim]  No memory file yet (created on first save)")
+
+    console.print()
+    if issues == 0:
+        console.print("[green]All checks passed.[/green]")
+    else:
+        console.print(f"[yellow]{issues} issue(s) found — see above.[/yellow]")
+
+
 def do_update():
     console.print("[dim]Updating CLAWCLI from origin/main...[/dim]")
     result = subprocess.run(  # nosec B603 B607 — fixed args, no user input
@@ -697,6 +783,7 @@ def do_update():
 _SLASH_COMMANDS = [
     ("/help",         "show help"),
     ("/update",       "pull latest version (restart to apply)"),
+    ("/doctor",       "check Ollama, SearXNG, dependencies"),
     ("/memory",       "show persistent memory"),
     ("/clear",        "clear conversation history"),
     ("/compact",      "summarize history to free context window"),
@@ -758,6 +845,10 @@ def main():
     # Built-in subcommands
     if args.prompt and args.prompt[0] == "update":
         do_update()
+        return
+
+    if args.prompt and args.prompt[0] == "doctor":
+        do_doctor(config)
         return
 
     if args.prompt and args.prompt[0] == "sessions":

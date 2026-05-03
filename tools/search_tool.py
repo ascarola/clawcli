@@ -52,6 +52,8 @@ def _is_private_url(url: str) -> bool:
 
 
 def web_search(query: str, searxng_url: str, num_results: int = 10) -> str:
+    if not searxng_url:
+        return "Web search is unavailable — SearXNG is not configured. Set searxng_url in config.json."
     try:
         params = {
             "q": query,

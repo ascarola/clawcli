@@ -21,6 +21,9 @@ config.json
 memory/MEMORY.md
 sessions/
 
+# Audit log (machine-local command log)
+audit.log
+
 # Shell history
 .clawcli_history
 *.history

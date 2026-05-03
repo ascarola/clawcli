@@ -1,30 +1,66 @@
 #!/bin/bash
-# CLAWCLI install script — run on any machine to install clawcli
+# CLAWCLI install script
+# Usage:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/ascarola/clawcli/main/install.sh)
+#
+# Non-interactive (env var overrides):
+#   OLLAMA_URL=http://myserver:11434 OLLAMA_MODEL=llama3.2:3b bash install.sh
+#
+# Private repo (token auth):
+#   GITHUB_TOKEN=github_pat_xxx bash install.sh
 set -e
 
-REPO_OWNER="ascarola"
-REPO_NAME="clawcli"
+REPO_OWNER="${REPO_OWNER:-ascarola}"
+REPO_NAME="${REPO_NAME:-clawcli}"
 INSTALL_DIR="${CLAWCLI_DIR:-$HOME/clawcli}"
 BIN_LINK="/usr/local/bin/clawcli"
 
-# Configurable endpoints (override via env vars)
-OLLAMA_URL="${OLLAMA_URL:-http://192.168.1.62:11434}"
-SEARXNG_URL="${SEARXNG_URL:-http://192.168.1.140:8888}"
+# ── Detect if running interactively ──────────────────────────────────────────
+IS_INTERACTIVE=0
+[ -t 0 ] && IS_INTERACTIVE=1
 
-# ── GitHub token (required for private repo) ──────────────────────────────────
-if [ -z "$GITHUB_TOKEN" ]; then
-    echo "ERROR: GITHUB_TOKEN is not set."
-    echo "  export GITHUB_TOKEN=github_pat_xxx"
-    echo "  Then re-run: bash <(curl -s -H \"Authorization: Bearer \$GITHUB_TOKEN\" https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/main/install.sh)"
-    exit 1
+# ── Helper ────────────────────────────────────────────────────────────────────
+ask() {
+    local prompt="$1"
+    local default="$2"
+    local result
+    if [ -n "$default" ]; then
+        printf "%s [%s]: " "$prompt" "$default"
+    else
+        printf "%s: " "$prompt"
+    fi
+    read -r result
+    echo "${result:-$default}"
+}
+
+ask_yn() {
+    local prompt="$1"
+    local default="${2:-y}"
+    local result
+    if [ "$default" = "y" ]; then
+        printf "%s [Y/n]: " "$prompt"
+    else
+        printf "%s [y/N]: " "$prompt"
+    fi
+    read -r result
+    result="${result:-$default}"
+    case "$result" in
+        [Yy]*) return 0 ;;
+        *)     return 1 ;;
+    esac
+}
+
+# ── Build repo URL ─────────────────────────────────────────────────────────────
+if [ -n "$GITHUB_TOKEN" ]; then
+    REPO_URL="https://${REPO_OWNER}:${GITHUB_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.git"
+else
+    REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 fi
 
-REPO_URL="https://${REPO_OWNER}:${GITHUB_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.git"
-
-echo "==> Installing CLAWCLI"
-echo "    Ollama:  $OLLAMA_URL"
-echo "    SearXNG: $SEARXNG_URL"
-echo "    Target:  $INSTALL_DIR"
+# ── Banner ────────────────────────────────────────────────────────────────────
+echo ""
+echo "🦞 CLAWCLI Installer"
+echo "──────────────────────────────────────"
 echo ""
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────
@@ -37,22 +73,25 @@ if command -v apt-get >/dev/null 2>&1; then
     python3 -m venv --help >/dev/null 2>&1 || MISSING="$MISSING python3-venv"
     python3 -m pip --version >/dev/null 2>&1  || MISSING="$MISSING python3-pip"
     if [ -n "$MISSING" ]; then
-        echo "==> Installing missing packages:$MISSING"
+        echo "==> Installing missing system packages:$MISSING"
         sudo apt-get install -y $MISSING
     fi
 fi
 
 # ── Clone or update ───────────────────────────────────────────────────────────
+IS_UPDATE=0
 if [ -d "$INSTALL_DIR/.git" ]; then
-    echo "==> Updating existing installation..."
+    IS_UPDATE=1
+    echo "==> Updating existing installation at $INSTALL_DIR..."
     git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL"
     git -C "$INSTALL_DIR" pull --ff-only
 else
     if [ -d "$INSTALL_DIR" ]; then
-        echo "WARNING: $INSTALL_DIR exists but is not a git repo. Remove it and re-run, or set CLAWCLI_DIR to a different path."
+        echo "WARNING: $INSTALL_DIR exists but is not a git repo."
+        echo "  Remove it and re-run, or set CLAWCLI_DIR to a different path."
         exit 1
     fi
-    echo "==> Cloning repository..."
+    echo "==> Cloning repository to $INSTALL_DIR..."
     git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
@@ -60,10 +99,8 @@ fi
 VENV="$INSTALL_DIR/.venv"
 if [ ! -d "$VENV" ]; then
     echo "==> Creating virtualenv..."
-    # python3-venv may need installing on Debian/Ubuntu
     if ! python3 -m venv "$VENV" 2>/dev/null; then
         if command -v apt-get >/dev/null 2>&1; then
-            echo "    Installing python3-venv..."
             sudo apt-get install -y python3-venv python3-pip
         elif command -v dnf >/dev/null 2>&1; then
             sudo dnf install -y python3-pip
@@ -74,27 +111,76 @@ if [ ! -d "$VENV" ]; then
     fi
 fi
 
-echo "==> Installing Python dependencies into virtualenv..."
+echo "==> Installing Python dependencies..."
 "$VENV/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
 
-# ── Generate machine-local config.json from defaults template ─────────────────
+# ── Config — only prompt/generate on fresh install ────────────────────────────
 DEFAULTS="$INSTALL_DIR/config.defaults.json"
 CONFIG="$INSTALL_DIR/config.json"
-if [ ! -f "$CONFIG" ]; then
-    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$SEARXNG_URL" <<'PYEOF'
+
+if [ "$IS_UPDATE" -eq 1 ] || [ -f "$CONFIG" ]; then
+    echo "==> config.json already exists — skipping (edit manually to change settings)"
+else
+    echo ""
+    echo "==> Configuration"
+    echo "    (Press Enter to accept the default shown in brackets)"
+    echo ""
+
+    # Ollama URL
+    if [ -z "$OLLAMA_URL" ]; then
+        if [ "$IS_INTERACTIVE" -eq 1 ]; then
+            OLLAMA_URL=$(ask "  Ollama server URL" "http://localhost:11434")
+        else
+            OLLAMA_URL="http://localhost:11434"
+        fi
+    fi
+
+    # Ollama model
+    if [ -z "$OLLAMA_MODEL" ]; then
+        if [ "$IS_INTERACTIVE" -eq 1 ]; then
+            echo ""
+            echo "  Suggested models (you must have these pulled in Ollama):"
+            echo "    gemma4:27b   — best quality, needs ~20GB VRAM"
+            echo "    llama3.1:8b  — good balance, needs ~6GB VRAM"
+            echo "    llama3.2:3b  — lightweight, runs on CPU"
+            echo ""
+            OLLAMA_MODEL=$(ask "  Ollama model" "gemma4:27b")
+        else
+            OLLAMA_MODEL="gemma4:27b"
+        fi
+    fi
+
+    # SearXNG (optional)
+    if [ -z "$SEARXNG_URL" ]; then
+        SEARXNG_URL=""
+        if [ "$IS_INTERACTIVE" -eq 1 ]; then
+            echo ""
+            if ask_yn "  Do you have a SearXNG instance? (enables web research)" "n"; then
+                SEARXNG_URL=$(ask "  SearXNG URL" "http://localhost:8888")
+            fi
+        fi
+    fi
+
+    echo ""
+    echo "  Settings:"
+    echo "    Ollama URL:  $OLLAMA_URL"
+    echo "    Model:       $OLLAMA_MODEL"
+    echo "    SearXNG:     ${SEARXNG_URL:-not configured}"
+    echo ""
+
+    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$SEARXNG_URL" <<'PYEOF'
 import sys, json
-defaults_path, out_path, ollama_url, searxng_url = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+defaults_path, out_path, ollama_url, model, searxng_url = sys.argv[1:]
 with open(defaults_path) as f:
     cfg = json.load(f)
 cfg["ollama_url"]  = ollama_url
+cfg["model"]       = model
 cfg["searxng_url"] = searxng_url
 with open(out_path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
-print("    config.json created from defaults")
+print("    config.json created")
 PYEOF
-else
-    echo "==> config.json already exists, skipping (edit manually or delete to regenerate)"
 fi
 
 # ── Ensure memory file exists ─────────────────────────────────────────────────
@@ -111,7 +197,7 @@ if [ ! -f "$INSTALL_DIR/memory/MEMORY.md" ]; then
 EOF
 fi
 
-# ── Write launcher wrapper (uses venv Python) ─────────────────────────────────
+# ── Write launcher wrapper ────────────────────────────────────────────────────
 LAUNCHER="$INSTALL_DIR/clawcli"
 cat > "$LAUNCHER" <<WRAPPER
 #!/bin/bash
@@ -120,7 +206,6 @@ WRAPPER
 chmod +x "$LAUNCHER"
 
 # ── Symlink launcher to PATH ──────────────────────────────────────────────────
-# On Apple Silicon, prefer /opt/homebrew/bin
 if [ "$(uname -s)" = "Darwin" ] && [ -d "/opt/homebrew/bin" ]; then
     BIN_LINK="/opt/homebrew/bin/clawcli"
 fi
@@ -143,17 +228,22 @@ else
     echo "==> Installed to $BIN_LINK"
 fi
 
-# ── Verify ────────────────────────────────────────────────────────────────────
+# ── Verify Ollama connectivity ────────────────────────────────────────────────
+OLLAMA_CHECK_URL="${OLLAMA_URL:-$(python3 -c "import json; print(json.load(open('$CONFIG'))['ollama_url'])" 2>/dev/null || echo "http://localhost:11434")}"
 echo ""
 echo "==> Testing Ollama connectivity..."
-if curl -sf "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
-    echo "    OK — Ollama reachable at $OLLAMA_URL"
+if curl -sf "$OLLAMA_CHECK_URL/api/tags" >/dev/null 2>&1; then
+    echo "    OK — Ollama reachable at $OLLAMA_CHECK_URL"
 else
-    echo "    WARNING: Cannot reach Ollama at $OLLAMA_URL"
-    echo "    Edit $CONFIG to update ollama_url after installation."
+    echo "    WARNING: Cannot reach Ollama at $OLLAMA_CHECK_URL"
+    echo "    Edit $CONFIG to update ollama_url, or run: clawcli doctor"
 fi
 
+# ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo "==> CLAWCLI installed successfully!"
-echo "    Run: clawcli"
-echo "    Help: clawcli --help"
+echo ""
+echo "    Run:        clawcli"
+echo "    Check:      clawcli doctor"
+echo "    Help:       clawcli --help"
+echo ""

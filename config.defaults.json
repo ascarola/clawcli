@@ -1,7 +1,7 @@
 {
-  "model": "gemma4:26b",
-  "ollama_url": "http://192.168.1.62:11434",
-  "searxng_url": "http://192.168.1.140:8888",
+  "model": "gemma4:27b",
+  "ollama_url": "http://localhost:11434",
+  "searxng_url": "",
   "temperature": 0.1,
   "context_window": 131072,
   "stream": true,
