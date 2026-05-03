@@ -669,15 +669,16 @@ def do_update():
 
 
 _SLASH_COMMANDS = [
-    ("/help",    "show help"),
-    ("/update",  "pull latest version (restart to apply)"),
-    ("/memory",  "show persistent memory"),
-    ("/clear",   "clear conversation history"),
-    ("/compact", "summarize history to free context window"),
-    ("/config",  "show current config"),
-    ("/cwd",     "change working directory"),
-    ("/model",   "list or switch Ollama model"),
-    ("/exit",    "quit and save session"),
+    ("/help",         "show help"),
+    ("/update",       "pull latest version (restart to apply)"),
+    ("/memory",       "show persistent memory"),
+    ("/clear",        "clear conversation history"),
+    ("/compact",      "summarize history to free context window"),
+    ("/config",       "show current config"),
+    ("/cwd <path>",   "change working directory"),
+    ("/model list",   "list available Ollama models"),
+    ("/model <name>", "switch Ollama model"),
+    ("/exit",         "quit and save session"),
 ]
 
 
@@ -686,12 +687,16 @@ class SlashCompleter(Completer):
         text = document.text_before_cursor
         if not text.startswith("/"):
             return
-        typed = text.lstrip("/").lower()
+        typed = text.lower()
         for cmd, desc in _SLASH_COMMANDS:
-            name = cmd.lstrip("/")
-            if name.startswith(typed):
+            # Match on the fixed part of the command (before any placeholder)
+            fixed = cmd.split(" <")[0].split(" [")[0]
+            if fixed.startswith(typed) or cmd.startswith(typed):
+                # For commands with placeholders, insert up to the placeholder
+                # so the user can continue typing the argument
+                insert = fixed + (" " if "<" in cmd else "")
                 yield Completion(
-                    cmd,
+                    insert,
                     start_position=-len(text),
                     display=cmd,
                     display_meta=desc,
