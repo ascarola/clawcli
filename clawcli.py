@@ -760,10 +760,24 @@ def do_update():
         text=True,
     )
     output = (result.stdout + result.stderr).strip()
-    console.print(output)
     if result.returncode != 0:
-        console.print("[red]Update failed.[/red]")
-        sys.exit(1)
+        # ff-only fails after a force-push (e.g. history squash) — reset hard instead
+        console.print("[dim]Fast-forward failed; resetting to origin/main...[/dim]")
+        subprocess.run(  # nosec B603 B607
+            ["git", "fetch", "origin"],
+            cwd=str(CLAWCLI_DIR), capture_output=True,
+        )
+        result = subprocess.run(  # nosec B603 B607
+            ["git", "reset", "--hard", "origin/main"],
+            cwd=str(CLAWCLI_DIR), capture_output=True, text=True,
+        )
+        output = (result.stdout + result.stderr).strip()
+        console.print(output)
+        if result.returncode != 0:
+            console.print("[red]Update failed.[/red]")
+            sys.exit(1)
+    else:
+        console.print(output)
 
     # Fetch tags separately — git pull doesn't reliably fetch them
     subprocess.run(  # nosec B603 B607
