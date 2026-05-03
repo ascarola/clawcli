@@ -26,6 +26,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.completion import Completer, Completion
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 CLAWCLI_DIR = Path(__file__).resolve().parent  # resolve symlink before .parent
@@ -667,6 +668,36 @@ def do_update():
     console.print("[green]Up to date.[/green]")
 
 
+_SLASH_COMMANDS = [
+    ("/help",    "show help"),
+    ("/update",  "pull latest version (restart to apply)"),
+    ("/memory",  "show persistent memory"),
+    ("/clear",   "clear conversation history"),
+    ("/compact", "summarize history to free context window"),
+    ("/config",  "show current config"),
+    ("/cwd",     "change working directory"),
+    ("/model",   "list or switch Ollama model"),
+    ("/exit",    "quit and save session"),
+]
+
+
+class SlashCompleter(Completer):
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        if not text.startswith("/"):
+            return
+        typed = text.lstrip("/").lower()
+        for cmd, desc in _SLASH_COMMANDS:
+            name = cmd.lstrip("/")
+            if name.startswith(typed):
+                yield Completion(
+                    cmd,
+                    start_position=-len(text),
+                    display=cmd,
+                    display_meta=desc,
+                )
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="clawcli",
@@ -765,6 +796,8 @@ def main():
         style=Style.from_dict({"prompt": "bold cyan"}),
         multiline=True,
         key_bindings=kb,
+        completer=SlashCompleter(),
+        complete_while_typing=True,
     )
 
     while True:
