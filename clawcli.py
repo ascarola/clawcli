@@ -644,7 +644,7 @@ def new_session_id() -> str:
 
 
 def save_session(session_id: str, messages: list, cwd: str):
-    SESSIONS_DIR.mkdir(exist_ok=True)
+    SESSIONS_DIR.mkdir(mode=0o700, exist_ok=True)
     path = SESSIONS_DIR / f"{session_id}.json"
     # Strip system message — it's rebuilt from current state on resume
     payload = {
@@ -654,6 +654,34 @@ def save_session(session_id: str, messages: list, cwd: str):
         "messages": [m for m in messages if m.get("role") != "system"],
     }
     path.write_text(json.dumps(payload, indent=2))
+    path.chmod(0o600)
+
+
+def purge_old_sessions(days: int = 30):
+    if not SESSIONS_DIR.exists():
+        return
+    cutoff = datetime.now().timestamp() - days * 86400
+    for f in SESSIONS_DIR.glob("*.json"):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+        except OSError:
+            pass
+
+
+def _secure_sessions_dir():
+    """Fix permissions on any existing session files that are world-readable."""
+    if not SESSIONS_DIR.exists():
+        return
+    try:
+        SESSIONS_DIR.chmod(0o700)
+    except OSError:
+        pass
+    for f in SESSIONS_DIR.glob("*.json"):
+        try:
+            f.chmod(0o600)
+        except OSError:
+            pass
 
 
 def load_session(session_id: str) -> tuple[list, str]:
@@ -881,6 +909,9 @@ def main():
         config["confirm_bash"] = False
     elif args.confirm:
         config["confirm_bash"] = True
+
+    _secure_sessions_dir()   # fix permissions on any existing world-readable files
+    purge_old_sessions(days=30)
 
     update_thread = _start_update_check()  # runs concurrently during startup
 
