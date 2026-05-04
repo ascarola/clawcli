@@ -1,13 +1,48 @@
 # Bash commands that are always blocked (one pattern per line)
 # Lines starting with # are comments
+
+# Destructive filesystem operations
 rm -rf /
 rm -rf ~
+rm -rf /etc
+rm -rf /home
+rm -rf /var
+rm -rf /usr
+rm -rf /root
+rm -rf /boot
+rm -rf /opt
 mkfs
+> /dev/sda
+
+# Dangerous disk operations
 dd if=/dev/zero
+dd of=/dev/
+
+# Fork bomb
 :(){ :|:& };:
+
+# Overly permissive chmod/chown
 chmod -R 777 /
 chown -R root /
-> /dev/sda
+
+# Reverse shells and backdoors
+nc -e
+ncat -e
+bash -i
+/bin/bash -i
+sh -i
+/bin/sh -i
+mkfifo
+/dev/tcp
+/dev/udp
+
+# Exfiltration servers
+python3 -m http
+python -m http
+python3 -m SimpleHTTPServer
+python -m SimpleHTTPServer
+
+# System control
 shutdown
 reboot
 halt
