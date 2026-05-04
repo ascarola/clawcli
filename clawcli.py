@@ -813,7 +813,7 @@ def do_update():
         venv_pip = CLAWCLI_DIR / ".venv" / "bin" / "pip"
         pip_cmd = [str(venv_pip)] if venv_pip.exists() else [sys.executable, "-m", "pip"]
         pip = subprocess.run(  # nosec B603 B607 — fixed args, no user input
-            pip_cmd + ["install", "-q", "-r", str(CLAWCLI_DIR / "requirements.txt")],
+            pip_cmd + ["install", "-q", "--upgrade", "-r", str(CLAWCLI_DIR / "requirements.txt")],
             capture_output=True, text=True,
         )
         if pip.returncode != 0:
