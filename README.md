@@ -51,7 +51,7 @@ CLAWCLI works with any Ollama model. Tool use (file edits, bash, search) require
 
 | Model | VRAM | Notes |
 |-------|------|-------|
-| `gemma4:27b` | ~20 GB | Best quality; default |
+| `gemma4:26b` | ~20 GB | Best quality; default |
 | `llama3.1:8b` | ~6 GB | Good balance of speed and quality |
 | `llama3.2:3b` | ~3 GB | Lightweight; runs on CPU |
 | `qwen2.5:7b`  | ~5 GB | Strong coding and tool use |
@@ -70,7 +70,7 @@ Switch models at any time with `/model llama3.1:8b` or `--model llama3.1:8b`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `model` | `gemma4:27b` | Ollama model |
+| `model` | `gemma4:26b` | Ollama model |
 | `ollama_url` | `http://localhost:11434` | Ollama server URL |
 | `searxng_url` | `""` | SearXNG URL (leave empty to disable) |
 | `assistant_name` | `CLAWCLI` | Name shown in the banner and used by the model |

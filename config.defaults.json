@@ -1,5 +1,5 @@
 {
-  "model": "gemma4:27b",
+  "model": "gemma4:26b",
   "ollama_url": "http://localhost:11434",
   "searxng_url": "",
   "assistant_name": "CLAWCLI",
