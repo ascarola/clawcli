@@ -118,6 +118,8 @@ def web_fetch(url: str, max_chars: int = 8000) -> str:
                 resolve=[f"{host}:{port}:{ip}"],
             )
         else:
+            # Note: requests fallback re-resolves DNS and does not pin the IP checked above.
+            # DNS rebinding protection is incomplete on this path. Install curl_cffi to fix.
             resp = requests.get(
                 url,
                 timeout=20,
