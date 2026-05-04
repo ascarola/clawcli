@@ -74,7 +74,9 @@ def execute_bash(
     denied = load_list(base / "denied_commands.txt")
 
     if not _audit_logger.handlers:
-        handler = logging.FileHandler(base / "audit.log")
+        log_path = base / "audit.log"
+        log_path.touch(mode=0o600, exist_ok=True)
+        handler = logging.FileHandler(log_path)
         handler.setFormatter(logging.Formatter("%(message)s"))
         _audit_logger.addHandler(handler)
         _audit_logger.setLevel(logging.INFO)
