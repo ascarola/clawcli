@@ -280,6 +280,57 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
         return f"Tool error ({name}): {e}"
 
 
+_VAGUE_RE = re.compile(
+    r'\b(he|she|him|her|they|them|it|this|that|these|those)\b', re.IGNORECASE
+)
+
+
+def _rewrite_search_query(query: str, messages: list, config: dict) -> str:
+    """If query contains pronouns, resolve them using conversation history via a tiny LLM call."""
+    if not _VAGUE_RE.search(query):
+        return query
+    context = [
+        {"role": m["role"], "content": (m.get("content") or "").strip()}
+        for m in messages[-30:]
+        if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
+    ][-8:]
+    rewrite_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You rewrite search queries. Resolve pronouns and vague references using "
+                "the conversation. Output ONLY the rewritten query — no explanation, no quotes."
+            ),
+        },
+        *context,
+        {
+            "role": "user",
+            "content": (
+                f"Rewrite this search query, resolving any pronouns (him/her/they/it/this/that) "
+                f"using the conversation above: {query}"
+            ),
+        },
+    ]
+    try:
+        resp = requests.post(
+            f"{config.get('ollama_url', 'http://localhost:11434')}/api/chat",
+            json={
+                "model": config.get("model", "gemma4:26b"),
+                "messages": rewrite_messages,
+                "stream": False,
+                "options": {"temperature": 0.0, "num_predict": 50},
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        rewritten = resp.json().get("message", {}).get("content", "").strip().strip("\"'")
+        if rewritten and len(rewritten) < 200:
+            return rewritten
+    except Exception:
+        pass
+    return query
+
+
 def render_tool_call(name: str, args: dict):
     console.print(f"\n[bold cyan]⚙ {name}[/bold cyan] ", end="")
     key_args = {k: v for k, v in args.items() if k not in ("content",)}
@@ -437,6 +488,9 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
                     args = json.loads(args)
                 except json.JSONDecodeError:
                     args = {}
+
+            if name == "web_search" and "query" in args:
+                args["query"] = _rewrite_search_query(args["query"], messages, config)
 
             render_tool_call(name, args)
             result = dispatch_tool(name, args, config, confirm=config.get("confirm_bash", False))
