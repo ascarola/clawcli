@@ -326,8 +326,8 @@ def _rewrite_search_query(query: str, messages: list, config: dict) -> str:
         rewritten = resp.json().get("message", {}).get("content", "").strip().strip("\"'")
         if rewritten and len(rewritten) < 200:
             return rewritten
-    except Exception:
-        pass
+    except Exception as e:
+        console.print(f"[dim]  (query rewrite failed: {e})[/dim]")
     return query
 
 
@@ -490,7 +490,10 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
                     args = {}
 
             if name == "web_search" and "query" in args:
+                original = args["query"]
                 args["query"] = _rewrite_search_query(args["query"], messages, config)
+                if args["query"] != original:
+                    console.print(f"[dim]  (resolved: \"{original}\" → \"{args['query']}\")[/dim]")
 
             render_tool_call(name, args)
             result = dispatch_tool(name, args, config, confirm=config.get("confirm_bash", False))
