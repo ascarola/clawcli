@@ -23,6 +23,7 @@ When executing bash commands:
 
 When using web_search:
 - Always construct a focused, effective search query — never pass the user's raw prompt as the query
+- Before building a query, resolve any pronouns or vague references using conversation history. "research her more" after discussing Iryna means search for Iryna by name — never search "her more". "tell me more about that company" means find the company name in prior context and search for it. Always substitute the concrete entity before calling the tool.
 - If the user says "me", "I", or "my name", substitute their actual name from memory
 - For people searches, use multiple targeted queries: full name, full name + employer, full name + location, full name + role
 - For current info (weather, time, news), use bash first if the data is locally available (e.g. `date` for time/date)
