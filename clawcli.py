@@ -290,28 +290,56 @@ _NOUN_STOPWORDS = {
     "Here", "If", "In", "On", "At", "For", "To", "Of", "And", "Or", "But",
     "Is", "Are", "Was", "Were", "Be", "As", "An", "By", "From", "With",
 }
+# Filler words that add no value at end of a search query after pronoun substitution
+_QUERY_FILLER_RE = re.compile(
+    r'\s+\b(more|further|again|now|please|additional|details|information)\b\s*$',
+    re.IGNORECASE
+)
+
+
+def _extract_entity(messages: list, skip_content: str = "") -> str:
+    """Return the most recently user-mentioned proper noun phrase, falling back to assistant text."""
+    def _candidates_from(text: str) -> list[str]:
+        return [
+            noun for noun in _PROPER_NOUN_RE.findall(text)
+            if noun not in _NOUN_STOPWORDS and len(noun) >= 3
+        ]
+
+    # User messages are the most reliable — they contain what the user explicitly named
+    for m in reversed(messages[-20:]):
+        if m.get("role") != "user":
+            continue
+        content = (m.get("content") or "").strip()
+        if not content or content == skip_content:
+            continue
+        found = _candidates_from(content)
+        if found:
+            return found[0]
+
+    # Fall back to most recent assistant text
+    for m in reversed(messages[-20:]):
+        if m.get("role") != "assistant":
+            continue
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        found = _candidates_from(content)
+        if found:
+            return found[0]
+
+    return ""
 
 
 def _rewrite_search_query(query: str, messages: list) -> str:
-    """Replace pronouns in a search query with proper nouns from recent conversation history."""
+    """Replace pronouns in a search query with the entity from recent conversation history."""
     if not _PRONOUN_RE.search(query):
         return query
-    candidates: list[str] = []
-    for m in reversed(messages[-20:]):
-        if m.get("role") not in ("user", "assistant"):
-            continue
-        content = (m.get("content") or "").strip()
-        if not content or content == query:
-            continue
-        for noun in _PROPER_NOUN_RE.findall(content):
-            if noun not in _NOUN_STOPWORDS and len(noun) > 3:
-                candidates.append(noun)
-        if candidates:
-            break
-    if not candidates:
+    entity = _extract_entity(messages, skip_content=query)
+    if not entity:
         return query
-    primary = candidates[0]
-    return _PRONOUN_RE.sub(primary, query).strip()
+    rewritten = _PRONOUN_RE.sub(entity, query).strip()
+    rewritten = _QUERY_FILLER_RE.sub("", rewritten).strip()
+    return rewritten or query
 
 
 def render_tool_call(name: str, args: dict):
