@@ -425,6 +425,10 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
     if is_research_prompt(user_input):
         query = extract_research_query(user_input)
+        resolved = _rewrite_search_query(query, messages)
+        if resolved != query:
+            console.print(f"[dim]  (resolved: \"{query}\" → \"{resolved}\")[/dim]")
+            query = resolved
         console.print(f"[cyan]Searching:[/cyan] {query}")
         results = web_search(query, searxng_url)
         user_input = f"Research: {query}\n\nSearch results:\n{results}\n\nPlease analyze and summarize these results."
