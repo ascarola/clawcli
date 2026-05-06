@@ -280,55 +280,38 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
         return f"Tool error ({name}): {e}"
 
 
-_VAGUE_RE = re.compile(
+_PRONOUN_RE = re.compile(
     r'\b(he|she|him|her|they|them|it|this|that|these|those)\b', re.IGNORECASE
 )
+_PROPER_NOUN_RE = re.compile(r'\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,})*)\b')
+_NOUN_STOPWORDS = {
+    "The", "This", "That", "These", "Those", "There", "Then", "When", "Where",
+    "What", "Which", "Who", "How", "Why", "Based", "Search", "Note", "Also",
+    "Here", "If", "In", "On", "At", "For", "To", "Of", "And", "Or", "But",
+    "Is", "Are", "Was", "Were", "Be", "As", "An", "By", "From", "With",
+}
 
 
-def _rewrite_search_query(query: str, messages: list, config: dict) -> str:
-    """If query contains pronouns, resolve them using conversation history via a tiny LLM call."""
-    if not _VAGUE_RE.search(query):
+def _rewrite_search_query(query: str, messages: list) -> str:
+    """Replace pronouns in a search query with proper nouns from recent conversation history."""
+    if not _PRONOUN_RE.search(query):
         return query
-    context = [
-        {"role": m["role"], "content": (m.get("content") or "").strip()}
-        for m in messages[-30:]
-        if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
-    ][-8:]
-    rewrite_messages = [
-        {
-            "role": "system",
-            "content": (
-                "You rewrite search queries. Resolve pronouns and vague references using "
-                "the conversation. Output ONLY the rewritten query — no explanation, no quotes."
-            ),
-        },
-        *context,
-        {
-            "role": "user",
-            "content": (
-                f"Rewrite this search query, resolving any pronouns (him/her/they/it/this/that) "
-                f"using the conversation above: {query}"
-            ),
-        },
-    ]
-    try:
-        resp = requests.post(
-            f"{config.get('ollama_url', 'http://localhost:11434')}/api/chat",
-            json={
-                "model": config.get("model", "gemma4:26b"),
-                "messages": rewrite_messages,
-                "stream": False,
-                "options": {"temperature": 0.0, "num_predict": 50},
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        rewritten = resp.json().get("message", {}).get("content", "").strip().strip("\"'")
-        if rewritten and len(rewritten) < 200:
-            return rewritten
-    except Exception as e:
-        console.print(f"[dim]  (query rewrite failed: {e})[/dim]")
-    return query
+    candidates: list[str] = []
+    for m in reversed(messages[-20:]):
+        if m.get("role") not in ("user", "assistant"):
+            continue
+        content = (m.get("content") or "").strip()
+        if not content or content == query:
+            continue
+        for noun in _PROPER_NOUN_RE.findall(content):
+            if noun not in _NOUN_STOPWORDS and len(noun) > 3:
+                candidates.append(noun)
+        if candidates:
+            break
+    if not candidates:
+        return query
+    primary = candidates[0]
+    return _PRONOUN_RE.sub(primary, query).strip()
 
 
 def render_tool_call(name: str, args: dict):
@@ -491,7 +474,7 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
 
             if name == "web_search" and "query" in args:
                 original = args["query"]
-                args["query"] = _rewrite_search_query(args["query"], messages, config)
+                args["query"] = _rewrite_search_query(args["query"], messages)
                 if args["query"] != original:
                     console.print(f"[dim]  (resolved: \"{original}\" → \"{args['query']}\")[/dim]")
 

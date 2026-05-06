@@ -111,7 +111,7 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
+                    "query": {"type": "string", "description": "Search query. Never use pronouns (he/she/him/her/they/it/this/that). Always use the specific name or term from conversation context. Example: if the user says 'research him' after discussing Anthony Scarola, the query must be 'Anthony Scarola', not 'him'."},
                     "num_results": {"type": "integer", "description": "Number of results to return (default 10)"}
                 },
                 "required": ["query"]
