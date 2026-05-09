@@ -73,6 +73,28 @@ def write_file(file_path: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 
+def _detect_eol(raw: bytes) -> str:
+    """Return the dominant line ending in raw bytes: '\\r\\n' or '\\n'."""
+    return '\r\n' if b'\r\n' in raw else '\n'
+
+
+def _read_normalised(path: Path) -> tuple[str, str]:
+    """Read file bytes, detect EOL, return (content_with_lf_only, original_eol)."""
+    raw = path.read_bytes()
+    eol = _detect_eol(raw)
+    text = raw.decode('utf-8', errors='replace')
+    if eol == '\r\n':
+        text = text.replace('\r\n', '\n')
+    return text, eol
+
+
+def _write_restored(path: Path, content: str, eol: str) -> None:
+    """Convert content back to original EOL and write as bytes."""
+    if eol == '\r\n':
+        content = content.replace('\n', '\r\n')
+    path.write_bytes(content.encode('utf-8', errors='replace'))
+
+
 def _fuzzy_find(content: str, old_string: str):
     """Find old_string using whitespace-normalized line comparison.
     Returns (1-indexed line number, actual matched text) or None."""
@@ -98,10 +120,13 @@ def edit_file(file_path: str, old_string: str, new_string: str, replace_all: boo
     if not path.exists():
         return f"Error: File not found: {file_path}"
     try:
-        content = path.read_text(errors="replace")
-        count = content.count(old_string)
+        content, eol = _read_normalised(path)
+        # Normalise caller-supplied strings to LF so matching works on any EOL file
+        old_norm = old_string.replace('\r\n', '\n')
+        new_norm = new_string.replace('\r\n', '\n')
+        count = content.count(old_norm)
         if count == 0:
-            fuzzy = _fuzzy_find(content, old_string)
+            fuzzy = _fuzzy_find(content, old_norm)
             if fuzzy:
                 lineno, actual = fuzzy
                 return (
@@ -120,8 +145,8 @@ def edit_file(file_path: str, old_string: str, new_string: str, replace_all: boo
                 f"Error: old_string appears {count} times in {file_path} — "
                 f"set replace_all=true or add more surrounding context to make it unique"
             )
-        new_content = content.replace(old_string, new_string, -1 if replace_all else 1)
-        path.write_text(new_content)
+        new_content = content.replace(old_norm, new_norm, -1 if replace_all else 1)
+        _write_restored(path, new_content, eol)
         replaced = count if replace_all else 1
         return f"Replaced {replaced} occurrence(s) in {file_path}"
     except Exception as e:
@@ -135,25 +160,28 @@ def replace_lines(file_path: str, start_line: int, end_line: int, new_content: s
     if not path.exists():
         return f"Error: File not found: {file_path}"
     try:
-        lines = path.read_text(errors="replace").splitlines(keepends=True)
+        text, eol = _read_normalised(path)
+        lines = text.splitlines(keepends=True)
         total = len(lines)
         if start_line < 1 or start_line > total:
             return f"Error: start_line {start_line} out of range (file has {total} lines)"
         if end_line < start_line or end_line > total:
             return f"Error: end_line {end_line} out of range (file has {total} lines)"
+        # Normalise caller-supplied content to LF — _write_restored converts back
+        new_content = new_content.replace('\r\n', '\n')
         original_last_had_newline = lines[end_line - 1].endswith("\n")
         replacement = []
         if new_content:
             needs_newline = (
-                (lines[end_line:] and not new_content.endswith("\n"))          # middle of file
-                or (not lines[end_line:] and original_last_had_newline         # end of file,
-                    and not new_content.endswith("\n"))                         # preserve trailing \n
+                (lines[end_line:] and not new_content.endswith("\n"))
+                or (not lines[end_line:] and original_last_had_newline
+                    and not new_content.endswith("\n"))
             )
             if needs_newline:
                 new_content += "\n"
             replacement = [new_content]
         result = lines[: start_line - 1] + replacement + lines[end_line:]
-        path.write_text("".join(result))
+        _write_restored(path, "".join(result), eol)
         removed = end_line - start_line + 1
         added = new_content.count("\n") if new_content else 0
         return f"Replaced lines {start_line}–{end_line} ({removed} line(s) → {added} line(s)) in {file_path}"
