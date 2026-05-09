@@ -141,9 +141,15 @@ def replace_lines(file_path: str, start_line: int, end_line: int, new_content: s
             return f"Error: start_line {start_line} out of range (file has {total} lines)"
         if end_line < start_line or end_line > total:
             return f"Error: end_line {end_line} out of range (file has {total} lines)"
+        original_last_had_newline = lines[end_line - 1].endswith("\n")
         replacement = []
         if new_content:
-            if lines[end_line:] and not new_content.endswith("\n"):
+            needs_newline = (
+                (lines[end_line:] and not new_content.endswith("\n"))          # middle of file
+                or (not lines[end_line:] and original_last_had_newline         # end of file,
+                    and not new_content.endswith("\n"))                         # preserve trailing \n
+            )
+            if needs_newline:
                 new_content += "\n"
             replacement = [new_content]
         result = lines[: start_line - 1] + replacement + lines[end_line:]
