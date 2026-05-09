@@ -73,6 +73,24 @@ def write_file(file_path: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 
+def _fuzzy_find(content: str, old_string: str):
+    """Find old_string using whitespace-normalized line comparison.
+    Returns (1-indexed line number, actual matched text) or None."""
+    old_lines = old_string.splitlines()
+    if not old_lines:
+        return None
+    old_stripped = [line.strip() for line in old_lines]
+    if all(not s for s in old_stripped):
+        return None
+    file_lines = content.splitlines(keepends=True)
+    n = len(old_lines)
+    for i in range(len(file_lines) - n + 1):
+        chunk_stripped = [file_lines[i + j].rstrip("\n").strip() for j in range(n)]
+        if chunk_stripped == old_stripped:
+            return (i + 1, "".join(file_lines[i : i + n]))
+    return None
+
+
 def edit_file(file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
     path = Path(file_path).expanduser().resolve()
     if _is_sensitive(path):
@@ -83,13 +101,56 @@ def edit_file(file_path: str, old_string: str, new_string: str, replace_all: boo
         content = path.read_text(errors="replace")
         count = content.count(old_string)
         if count == 0:
-            return f"Error: old_string not found in {file_path}"
+            fuzzy = _fuzzy_find(content, old_string)
+            if fuzzy:
+                lineno, actual = fuzzy
+                return (
+                    f"Error: old_string not found exactly in {file_path} "
+                    f"(whitespace mismatch near line {lineno}). "
+                    f"Actual text at that location:\n{actual}\n"
+                    f"Retry edit_file using the exact text shown above as old_string, "
+                    f"or use replace_lines with start_line={lineno}."
+                )
+            return (
+                f"Error: old_string not found in {file_path}. "
+                f"Re-read the file to confirm the exact text before retrying."
+            )
         if count > 1 and not replace_all:
-            return f"Error: old_string appears {count} times in {file_path} — set replace_all=true or provide more context to make it unique"
+            return (
+                f"Error: old_string appears {count} times in {file_path} — "
+                f"set replace_all=true or add more surrounding context to make it unique"
+            )
         new_content = content.replace(old_string, new_string, -1 if replace_all else 1)
         path.write_text(new_content)
         replaced = count if replace_all else 1
         return f"Replaced {replaced} occurrence(s) in {file_path}"
+    except Exception as e:
+        return f"Error editing file: {e}"
+
+
+def replace_lines(file_path: str, start_line: int, end_line: int, new_content: str) -> str:
+    path = Path(file_path).expanduser().resolve()
+    if _is_sensitive(path):
+        return f"Error: Editing {file_path} is not permitted — sensitive path blocked."
+    if not path.exists():
+        return f"Error: File not found: {file_path}"
+    try:
+        lines = path.read_text(errors="replace").splitlines(keepends=True)
+        total = len(lines)
+        if start_line < 1 or start_line > total:
+            return f"Error: start_line {start_line} out of range (file has {total} lines)"
+        if end_line < start_line or end_line > total:
+            return f"Error: end_line {end_line} out of range (file has {total} lines)"
+        replacement = []
+        if new_content:
+            if lines[end_line:] and not new_content.endswith("\n"):
+                new_content += "\n"
+            replacement = [new_content]
+        result = lines[: start_line - 1] + replacement + lines[end_line:]
+        path.write_text("".join(result))
+        removed = end_line - start_line + 1
+        added = new_content.count("\n") if new_content else 0
+        return f"Replaced lines {start_line}–{end_line} ({removed} line(s) → {added} line(s)) in {file_path}"
     except Exception as e:
         return f"Error editing file: {e}"
 

@@ -98,7 +98,7 @@ def _finish_update_check(t: threading.Thread) -> None:
 # ── Tool imports ─────────────────────────────────────────────────────────────
 sys.path.insert(0, str(CLAWCLI_DIR))
 from tools import TOOL_DEFINITIONS
-from tools.file_tools import read_file, write_file, edit_file, glob_files, grep_files
+from tools.file_tools import read_file, write_file, edit_file, replace_lines, glob_files, grep_files
 from tools.bash_tool import execute_bash
 from tools.search_tool import web_search, web_fetch
 
@@ -238,6 +238,14 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
                 args["old_string"],
                 args["new_string"],
                 args.get("replace_all", False),
+            )
+
+        elif name == "replace_lines":
+            return replace_lines(
+                args["file_path"],
+                args["start_line"],
+                args["end_line"],
+                args.get("new_content", ""),
             )
 
         elif name == "glob_files":

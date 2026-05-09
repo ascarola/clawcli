@@ -36,16 +36,33 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Replace an exact string in a file with new content. The old_string must be unique in the file.",
+            "description": "Replace an exact string in a file with new content. The old_string must match character-for-character including indentation. Prefer replace_lines when you have line numbers from a recent read_file.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string", "description": "Path to the file to edit"},
-                    "old_string": {"type": "string", "description": "The exact text to replace (must be unique in file)"},
+                    "old_string": {"type": "string", "description": "The exact text to replace (must be unique in file, whitespace included)"},
                     "new_string": {"type": "string", "description": "The replacement text"},
                     "replace_all": {"type": "boolean", "description": "Replace all occurrences instead of requiring uniqueness"}
                 },
                 "required": ["file_path", "old_string", "new_string"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_lines",
+            "description": "Replace a range of lines in a file by line number. More reliable than edit_file because it requires no string matching — use this whenever you have line numbers from a recent read_file call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Path to the file to edit"},
+                    "start_line": {"type": "integer", "description": "First line to replace (1-indexed, inclusive)"},
+                    "end_line": {"type": "integer", "description": "Last line to replace (1-indexed, inclusive)"},
+                    "new_content": {"type": "string", "description": "Replacement text. May span multiple lines. Include correct indentation. Use empty string to delete the lines."}
+                },
+                "required": ["file_path", "start_line", "end_line", "new_content"]
             }
         }
     },
