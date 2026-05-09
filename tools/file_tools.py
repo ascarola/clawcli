@@ -50,7 +50,9 @@ def read_file(file_path: str, offset: int = None, limit: int = None) -> str:
     try:
         lines = path.read_text(errors="replace").splitlines(keepends=True)
         start = (offset - 1) if offset and offset > 0 else 0
-        end = (start + limit) if limit else None
+        if start >= len(lines) and lines:
+            return f"(offset {offset} is past end of file — {len(lines)} lines total)"
+        end = (start + limit) if limit and limit > 0 else None
         selected = lines[start:end]
         result = []
         for i, line in enumerate(selected, start=start + 1):

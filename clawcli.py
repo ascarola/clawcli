@@ -288,8 +288,13 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
         return f"Tool error ({name}): {e}"
 
 
+# Broad: includes demonstratives — used only to detect whether fast-path should be skipped
 _PRONOUN_RE = re.compile(
-    r'\b(he|she|him|her|they|them|it|this|that|these|those)\b', re.IGNORECASE
+    r"\b(he|she|him|her|they|them|it|this|that|these|those)\b(?!')", re.IGNORECASE
+)
+# Narrow: personal pronouns only, no apostrophe contractions — used for substitution
+_SUBST_RE = re.compile(
+    r"\b(he|she|him|her|they|them|it)\b(?!')", re.IGNORECASE
 )
 _PROPER_NOUN_RE = re.compile(r'\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,})*)\b')
 _NOUN_STOPWORDS = {
@@ -297,6 +302,7 @@ _NOUN_STOPWORDS = {
     "What", "Which", "Who", "How", "Why", "Based", "Search", "Note", "Also",
     "Here", "If", "In", "On", "At", "For", "To", "Of", "And", "Or", "But",
     "Is", "Are", "Was", "Were", "Be", "As", "An", "By", "From", "With",
+    "Tell", "Show", "Give", "Get", "Find", "Look",
 }
 # Filler words that add no value at end of a search query after pronoun substitution
 _QUERY_FILLER_RE = re.compile(
@@ -313,6 +319,10 @@ def _extract_entity(messages: list, skip_content: str = "") -> str:
             if noun not in _NOUN_STOPWORDS and len(noun) >= 3
         ]
 
+    def _best(candidates: list[str]) -> str:
+        multi = [c for c in candidates if ' ' in c]
+        return multi[0] if multi else candidates[0]
+
     # User messages are the most reliable — they contain what the user explicitly named
     for m in reversed(messages[-20:]):
         if m.get("role") != "user":
@@ -322,7 +332,7 @@ def _extract_entity(messages: list, skip_content: str = "") -> str:
             continue
         found = _candidates_from(content)
         if found:
-            return found[0]
+            return _best(found)
 
     # Fall back to most recent assistant text
     for m in reversed(messages[-20:]):
@@ -333,21 +343,42 @@ def _extract_entity(messages: list, skip_content: str = "") -> str:
             continue
         found = _candidates_from(content)
         if found:
-            return found[0]
+            return _best(found)
 
     return ""
 
 
 def _rewrite_search_query(query: str, messages: list) -> str:
-    """Replace pronouns in a search query with the entity from recent conversation history."""
-    if not _PRONOUN_RE.search(query):
+    """Replace personal pronouns in a search query with the entity from recent conversation history."""
+    if not _SUBST_RE.search(query):
         return query
     entity = _extract_entity(messages, skip_content=query)
     if not entity:
         return query
-    rewritten = _PRONOUN_RE.sub(entity, query).strip()
+    rewritten = _SUBST_RE.sub(entity, query).strip()
     rewritten = _QUERY_FILLER_RE.sub("", rewritten).strip()
     return rewritten or query
+
+
+_LATEX_SYMBOLS = {
+    r"\rightarrow": "→", r"\to": "→", r"\leftarrow": "←", r"\Rightarrow": "⇒",
+    r"\Leftarrow": "⇐", r"\leftrightarrow": "↔", r"\approx": "≈", r"\ne": "≠",
+    r"\neq": "≠", r"\leq": "≤", r"\geq": "≥", r"\le": "≤", r"\ge": "≥",
+    r"\times": "×", r"\div": "÷", r"\infty": "∞", r"\pm": "±", r"\cdot": "·",
+    r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ", r"\lambda": "λ",
+    r"\mu": "μ", r"\sigma": "σ", r"\pi": "π", r"\Sigma": "Σ",
+}
+_LATEX_INLINE_RE = re.compile(r'\$([^$\n]+?)\$')
+
+
+def _delatex(text: str) -> str:
+    """Convert inline LaTeX math ($...$) to Unicode equivalents for terminal display."""
+    def _convert(m: re.Match) -> str:
+        inner = m.group(1).strip()
+        for cmd, uni in _LATEX_SYMBOLS.items():
+            inner = inner.replace(cmd, uni)
+        return inner.strip("\\{} ")
+    return _LATEX_INLINE_RE.sub(_convert, text)
 
 
 def render_tool_call(name: str, args: dict):
@@ -400,7 +431,8 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
 
     console.print()
     chunk_count = 0
-    with Live(Spinner("dots", text="[dim]thinking…[/dim]"), console=console, refresh_per_second=12, vertical_overflow="visible") as live:
+    RENDER_EVERY = 15  # re-render every N chunks to avoid terminal overflow artifacts
+    with Live(Spinner("dots", text="[dim]thinking…[/dim]"), console=console, refresh_per_second=12) as live:
         for line in resp.iter_lines():
             if not line:
                 continue
@@ -416,11 +448,12 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
             if delta_content:
                 full_content += delta_content
                 chunk_count  += 1
-                live.update(Markdown(full_content))
+                if chunk_count % RENDER_EVERY == 0:
+                    live.update(Markdown(_delatex(full_content)))
 
                 if chunk_count % REPEAT_CHECK_EVERY == 0 and _is_repetitive(full_content):
                     resp.close()
-                    live.update(Markdown(full_content.rstrip()))
+                    live.update(Markdown(_delatex(full_content.rstrip())))
                     console.print("\n[yellow]⚠ Runaway repetition detected — output truncated.[/yellow]")
                     break
 
@@ -430,6 +463,8 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
             if chunk.get("done"):
                 prompt_tokens     = chunk.get("prompt_eval_count", 0)
                 completion_tokens = chunk.get("eval_count", 0)
+                if full_content:
+                    live.update(Markdown(_delatex(full_content)))
                 break
 
     if not full_content:

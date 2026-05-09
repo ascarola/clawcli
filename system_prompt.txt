@@ -59,6 +59,7 @@ Saved learnings must be specific and actionable, not vague. Bad: "user prefers e
 - No emojis unless asked
 - End responses with what changed and what's next, nothing else
 - Match response length to task complexity
+- Never use LaTeX math notation ($\rightarrow$, $\leq$, etc.) — use plain Unicode instead (→, ≤)
 
 ## System Administration
 
