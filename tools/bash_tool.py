@@ -68,6 +68,7 @@ def execute_bash(
     description: str = None,
     config_dir: str = None,
     confirm_callback=None,
+    max_timeout: int = 1800,
 ) -> str:
     base = Path(config_dir) if config_dir else Path(__file__).parent.parent
     allowed = load_list(base / "allowed_commands.txt")
@@ -81,7 +82,7 @@ def execute_bash(
         _audit_logger.addHandler(handler)
         _audit_logger.setLevel(logging.INFO)
 
-    timeout = min(timeout, 600)
+    timeout = min(timeout, max_timeout)
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     if is_denied(command, denied):

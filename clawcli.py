@@ -268,6 +268,7 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
                 args.get("description"),
                 config_dir=str(CLAWCLI_DIR),
                 confirm_callback=confirm_bash if confirm else None,
+                max_timeout=config.get("bash_max_timeout", 1800),
             )
 
         elif name == "web_search":
@@ -404,7 +405,7 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
             "num_ctx": config.get("context_window", 8192),
         },
     }
-    resp = requests.post(url, json=payload, stream=stream, timeout=config.get("ollama_timeout", 600))
+    resp = requests.post(url, json=payload, stream=stream, timeout=config.get("ollama_timeout", 1800))
     resp.raise_for_status()
 
     if not stream:
