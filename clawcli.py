@@ -963,7 +963,15 @@ def do_update():
             capture_output=True, text=True,
         )
         if pip.returncode != 0:
-            console.print(f"[yellow]pip warning:[/yellow] {pip.stderr.strip()}")
+            # Filter out noise from system-installed packages pip can't manage
+            real_errors = "\n".join(
+                l for l in pip.stderr.splitlines()
+                if "uninstall-no-record-file" not in l and "Cannot uninstall" not in l
+                and "no RECORD file" not in l and "installed by debian" not in l
+                and "installed by" not in l.lower() and l.strip()
+            ).strip()
+            if real_errors:
+                console.print(f"[yellow]pip warning:[/yellow] {real_errors}")
     console.print("[green]Up to date.[/green]")
 
 
