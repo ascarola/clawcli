@@ -11,5 +11,7 @@
   "confirm_bash": true,
   "confirm_write": false,
   "max_tool_iterations": 20,
-  "ollama_timeout": 600
+  "ollama_timeout": 600,
+  "kali_server_url": "",
+  "kali_timeout": 300
 }

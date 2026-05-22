@@ -97,10 +97,11 @@ def _finish_update_check(t: threading.Thread) -> None:
 
 # ── Tool imports ─────────────────────────────────────────────────────────────
 sys.path.insert(0, str(CLAWCLI_DIR))
-from tools import TOOL_DEFINITIONS
+from tools import TOOL_DEFINITIONS, KALI_TOOL_DEFINITIONS
 from tools.file_tools import read_file, write_file, edit_file, replace_lines, glob_files, grep_files
 from tools.bash_tool import execute_bash
 from tools.search_tool import web_search, web_fetch
+from tools.kali_tool import check_health as kali_health, run_tool as kali_run, format_result as kali_fmt, DESTRUCTIVE_TOOLS as KALI_DESTRUCTIVE
 
 
 def load_config() -> dict:
@@ -200,6 +201,22 @@ def build_system_prompt(config: dict) -> str:
         base += f"\n\nThe user's name is {user_name}. Address them by name naturally."
     if not config.get("searxng_url"):
         base += "\n\nNote: SearXNG is not configured — web_search is unavailable. Do not attempt research prompts or suggest web searches."
+    kali_url = config.get("kali_server_url", "")
+    if kali_url:
+        base += (
+            f"\n\n## Kali Security Scanning\n"
+            f"A Kali Linux security server is configured at {kali_url}. "
+            f"Use the kali_scan tool for security assessments.\n"
+            f"Standard recon workflow: (1) nmap with scan_type=-sV and additional_args=-T4 -Pn to "
+            f"discover ports/services, (2) nikto or gobuster against any web ports found, "
+            f"(3) wpscan if WordPress is detected. Chain these automatically without asking.\n"
+            f"Always present findings in plain English with severity context — never dump raw tool output.\n"
+            f"sqlmap, hydra, and john are destructive/high-noise: always warn the user and call "
+            f"kali_scan (the tool will prompt for confirmation automatically).\n"
+            f"If the user asks about security scanning without a specific target, ask for the target IP/URL first."
+        )
+    else:
+        base += "\n\nNote: Kali security scanning is not configured. Use /kali <url> to enable it."
     memory = load_memory()
     if memory.strip():
         mem_block = f"\n\n## Persistent Memory\n{memory}"
@@ -216,6 +233,18 @@ def confirm_bash(command: str, description: str) -> bool:
     console.print(f"[white]  $ {command}[/white]")
     try:
         answer = input("  Allow? [y/N] ").strip().lower()
+        return answer in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
+def confirm_kali_destructive(tool: str, target: str) -> bool:
+    console.print(
+        f"\n[bold red]⚠ {tool.upper()} is a potentially destructive / high-noise tool.[/bold red]"
+    )
+    console.print(f"[dim]  Target: {target}[/dim]")
+    try:
+        answer = input(f"  Proceed with {tool} against {target}? (yes/no) ").strip().lower()
         return answer in ("y", "yes")
     except (EOFError, KeyboardInterrupt):
         return False
@@ -279,6 +308,31 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
 
         elif name == "save_memory":
             return save_memory(args["section"], args["content"])
+
+        elif name == "kali_scan":
+            kali_url = config.get("kali_server_url", "").rstrip("/")
+            if not kali_url:
+                return "Error: Kali server not configured. Use /kali <url> to set it."
+            tool   = args.get("tool", "")
+            params = dict(args.get("params") or {})
+            reason = args.get("reason", "")
+            if not tool:
+                return "Error: kali_scan requires a 'tool' argument."
+
+            # Health check before any scan
+            ok, health_msg = kali_health(kali_url)
+            if not ok:
+                return f"Error: {health_msg}"
+
+            # Destructive tools require explicit user confirmation
+            if tool in KALI_DESTRUCTIVE:
+                target = (params.get("target") or params.get("url")
+                          or params.get("hash_file") or "unknown target")
+                if not confirm_kali_destructive(tool, target):
+                    return f"Scan cancelled by user."
+
+            result = kali_run(kali_url, tool, params, timeout=config.get("kali_timeout", 300))
+            return kali_fmt(tool, result)
 
         else:
             return f"Unknown tool: {name}"
@@ -398,7 +452,7 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
     payload = {
         "model": model,
         "messages": messages,
-        "tools": TOOL_DEFINITIONS,
+        "tools": TOOL_DEFINITIONS + (KALI_TOOL_DEFINITIONS if config.get("kali_server_url") else []),
         "stream": stream,
         "options": {
             "temperature": config.get("temperature", 0.1),
@@ -746,6 +800,38 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         do_doctor(config)
         return True, messages
 
+    elif command == "/kali":
+        if arg.lower() == "disable":
+            config.pop("kali_server_url", None)
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            console.print("[dim]Kali server disabled and removed from config.[/dim]")
+        elif arg:
+            url = arg.rstrip("/")
+            ok, msg = kali_health(url)
+            if ok:
+                config["kali_server_url"] = url
+                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                # Rebuild system message with new Kali context
+                for m in messages:
+                    if m.get("role") == "system":
+                        m["content"] = build_system_prompt(config)
+                        break
+                console.print(f"[green]✓[/green]  Kali server set to {url}")
+            else:
+                console.print(f"[red]✗[/red]  {msg}")
+                console.print("[dim]  Server saved anyway — use /kali disable to remove it.[/dim]")
+                config["kali_server_url"] = url
+                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+        else:
+            kali_url = config.get("kali_server_url", "")
+            if kali_url:
+                ok, msg = kali_health(kali_url)
+                status = "[green]✓  reachable[/green]" if ok else "[red]✗  unreachable[/red]"
+                console.print(f"Kali server: [cyan]{kali_url}[/cyan]  {status}")
+            else:
+                console.print("[dim]Kali server not configured. Usage: /kali <url>[/dim]")
+        return True, messages
+
     elif command in ("/exit", "/quit", "/q"):
         if session_id:
             save_session(session_id, messages, os.getcwd())
@@ -898,6 +984,19 @@ def do_doctor(config: dict):
     else:
         console.print("[dim]-[/dim]  SearXNG not configured (web search disabled — optional)")
 
+    # Kali server (optional)
+    kali_url = config.get("kali_server_url", "")
+    if kali_url:
+        ok, msg = kali_health(kali_url)
+        if ok:
+            console.print(f"[green]✓[/green]  Kali server reachable at {kali_url}")
+        else:
+            console.print(f"[red]✗[/red]  Kali server unreachable: {msg}")
+            console.print(f"     Fix: ensure mcp-kali-server is running, or /kali disable")
+            issues += 1
+    else:
+        console.print("[dim]-[/dim]  Kali security scanning not configured (optional — /kali <url> to enable)")
+
     # Config file
     if CONFIG_FILE.exists():
         console.print(f"[green]✓[/green]  Config: {CONFIG_FILE}")
@@ -986,6 +1085,7 @@ _SLASH_COMMANDS = [
     ("/cwd <path>",   "change working directory"),
     ("/model list",   "list available Ollama models"),
     ("/model <name>", "switch Ollama model"),
+    ("/kali <url>",   "set Kali security server URL (or /kali to check status, /kali disable)"),
     ("/exit",         "quit and save session"),
 ]
 

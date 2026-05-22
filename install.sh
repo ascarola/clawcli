@@ -183,6 +183,17 @@ except Exception:
         fi
     fi
 
+    # Kali security scanning (optional)
+    if [ -z "$KALI_SERVER_URL" ]; then
+        KALI_SERVER_URL=""
+        if [ "$IS_INTERACTIVE" -eq 1 ]; then
+            echo ""
+            if ask_yn "  Do you have an mcp-kali-server instance? (enables security scanning)" "n"; then
+                KALI_SERVER_URL=$(ask "  mcp-kali-server URL" "http://192.168.1.101:5050")
+            fi
+        fi
+    fi
+
     # Personalization (optional)
     if [ -z "$ASSISTANT_NAME" ]; then
         ASSISTANT_NAME="CLAWCLI"
@@ -203,20 +214,22 @@ except Exception:
     echo "    Ollama URL:       $OLLAMA_URL"
     echo "    Model:            $OLLAMA_MODEL"
     echo "    SearXNG:          ${SEARXNG_URL:-not configured}"
+    echo "    Kali server:      ${KALI_SERVER_URL:-not configured}"
     echo "    Assistant name:   $ASSISTANT_NAME"
     echo "    Your name:        ${USER_NAME:-not set}"
     echo ""
 
-    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$SEARXNG_URL" "$ASSISTANT_NAME" "$USER_NAME" <<'PYEOF'
+    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$SEARXNG_URL" "$KALI_SERVER_URL" "$ASSISTANT_NAME" "$USER_NAME" <<'PYEOF'
 import sys, json
-defaults_path, out_path, ollama_url, model, searxng_url, assistant_name, user_name = sys.argv[1:]
+defaults_path, out_path, ollama_url, model, searxng_url, kali_server_url, assistant_name, user_name = sys.argv[1:]
 with open(defaults_path) as f:
     cfg = json.load(f)
-cfg["ollama_url"]      = ollama_url
-cfg["model"]           = model
-cfg["searxng_url"]     = searxng_url
-cfg["assistant_name"]  = assistant_name
-cfg["user_name"]       = user_name
+cfg["ollama_url"]       = ollama_url
+cfg["model"]            = model
+cfg["searxng_url"]      = searxng_url
+cfg["kali_server_url"]  = kali_server_url
+cfg["assistant_name"]   = assistant_name
+cfg["user_name"]        = user_name
 with open(out_path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")

@@ -166,3 +166,50 @@ TOOL_DEFINITIONS = [
         }
     }
 ]
+
+KALI_TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "kali_scan",
+            "description": (
+                "Run a Kali Linux security scan via the configured mcp-kali-server. "
+                "Always run nmap first to discover open ports, then follow up with "
+                "nikto/gobuster on any web ports, and wpscan if WordPress is detected. "
+                "IMPORTANT: sqlmap, hydra, and john are destructive/high-noise and will "
+                "require user confirmation before they execute — always warn the user first. "
+                "Tool param reference:\n"
+                "  nmap:      target, scan_type (default -sV), ports, additional_args (default -T4 -Pn)\n"
+                "  nikto:     target, additional_args\n"
+                "  gobuster:  url, mode (dir/dns/vhost), wordlist (default /usr/share/wordlists/dirb/common.txt), additional_args\n"
+                "  dirb:      url, wordlist, additional_args\n"
+                "  wpscan:    url, additional_args\n"
+                "  enum4linux: target, additional_args\n"
+                "  sqlmap:    url, data, additional_args  [DESTRUCTIVE — requires confirmation]\n"
+                "  hydra:     target, service, username, username_file, password, password_file, additional_args  [DESTRUCTIVE]\n"
+                "  john:      hash_file, wordlist, format, additional_args  [DESTRUCTIVE]\n"
+                "  command:   command (arbitrary shell string for cases not covered above)"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool": {
+                        "type": "string",
+                        "enum": ["nmap", "nikto", "gobuster", "dirb", "wpscan",
+                                 "enum4linux", "sqlmap", "hydra", "john", "command"],
+                        "description": "The security tool to invoke"
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Tool-specific parameters as a key-value object. See tool param reference in description."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Brief explanation of why this scan is being run (shown to user)"
+                    }
+                },
+                "required": ["tool", "params"]
+            }
+        }
+    }
+]
