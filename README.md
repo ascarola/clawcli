@@ -12,7 +12,8 @@ A Claude Code-style AI assistant for the terminal, powered entirely by a local [
 - **Update checking** — notified on startup when a newer version is available; update in-session with `/update`
 - **Bot-resistant web fetch** — uses Chrome TLS impersonation via `curl_cffi` to bypass Cloudflare and common bot-detection
 - **SearXNG integration** — optional web research via your own SearXNG instance
-- **Safety controls** — configurable allow/deny lists for bash commands; audit log of every command run
+- **Kali security scanning** — optional integration with [mcp-kali-server](https://github.com/ascarola/mcp-kali-server) to run nmap, nikto, gobuster, hydra, sqlmap, metasploit, and more via natural language
+- **Safety controls** — configurable allow/deny lists for bash commands; destructive security tools require explicit confirmation; audit log of every command run
 
 ## Requirements
 
@@ -20,6 +21,7 @@ A Claude Code-style AI assistant for the terminal, powered entirely by a local [
 - **[Ollama](https://ollama.com)** running locally or on your network
 - A pulled Ollama model (see [Model Recommendations](#model-recommendations) below)
 - **SearXNG** *(optional)* — self-hosted search for `research <topic>` prompts
+- **mcp-kali-server** *(optional)* — self-hosted Kali Linux REST API for security scanning
 
 ## Quick Start
 
@@ -34,7 +36,7 @@ clawcli
 clawcli doctor
 ```
 
-The installer will ask for your Ollama server URL, model, and optionally SearXNG.
+The installer will ask for your Ollama server URL, model, and optionally SearXNG and mcp-kali-server.
 
 ### Non-interactive install (CI / headless)
 
@@ -42,6 +44,7 @@ The installer will ask for your Ollama server URL, model, and optionally SearXNG
 OLLAMA_URL=http://192.168.1.10:11434 \
 OLLAMA_MODEL=llama3.1:8b \
 SEARXNG_URL=http://192.168.1.20:8888 \
+KALI_SERVER_URL=http://192.168.1.101:5050 \
 bash install.sh
 ```
 
@@ -81,7 +84,10 @@ Switch models at any time with `/model llama3.1:8b` or `--model llama3.1:8b`.
 | `confirm_bash` | `true` | Prompt before unapproved bash commands |
 | `confirm_write` | `false` | Prompt before writing files |
 | `max_tool_iterations` | `20` | Max agentic loop iterations per turn |
-| `ollama_timeout` | `600` | HTTP timeout in seconds for Ollama requests |
+| `ollama_timeout` | `1800` | HTTP timeout in seconds for Ollama requests |
+| `bash_max_timeout` | `1800` | Maximum allowed bash command timeout in seconds |
+| `kali_server_url` | `""` | mcp-kali-server URL (leave empty to disable) |
+| `kali_timeout` | `300` | Timeout in seconds for Kali tool requests |
 
 ## Usage
 
@@ -136,6 +142,9 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/cwd <path>` | Change working directory |
 | `/model list` | List available models on your Ollama server |
 | `/model <name>` | Switch Ollama model (context window auto-detected) |
+| `/kali <url>` | Set mcp-kali-server URL and save to config |
+| `/kali` | Show current Kali server URL and reachability status |
+| `/kali disable` | Remove Kali server from config |
 | `/exit` | Quit and save session |
 
 ## Multi-line Input
@@ -166,6 +175,61 @@ Set `"confirm_bash": true` in `config.json` to require approval for any command 
 
 Every bash command executed is logged to `audit.log` with timestamp and exit code.
 
+## Kali Security Scanning
+
+CLAWCLI integrates with [mcp-kali-server](https://github.com/ascarola/mcp-kali-server), a Flask REST API that exposes Kali Linux security tools over HTTP. When configured, the model can drive full recon workflows using natural language.
+
+### Setup
+
+```bash
+# Inside a clawcli session
+/kali http://192.168.1.101:5050
+```
+
+This health-checks the server, saves the URL to `config.json`, and immediately enables scanning. Use `/kali` to check status or `/kali disable` to remove it.
+
+### Available Tools
+
+| Tool | Purpose | Confirmation Required |
+|------|---------|----------------------|
+| `nmap` | Port scanning and service detection | No |
+| `nikto` | Web server vulnerability scanning | No |
+| `gobuster` | Directory and DNS brute-forcing | No |
+| `dirb` | Directory brute-forcing | No |
+| `wpscan` | WordPress vulnerability scanning | No |
+| `enum4linux` | SMB/Samba enumeration | No |
+| `sqlmap` | SQL injection testing | **Yes** |
+| `hydra` | Network login brute-forcing | **Yes** |
+| `john` | Password hash cracking | **Yes** |
+| `metasploit` | Exploitation framework | **Yes** |
+| `command` | Arbitrary shell command | No |
+
+Destructive tools (sqlmap, hydra, john, metasploit) always prompt: *"⚠ TOOL is a potentially destructive / high-noise tool. Proceed against TARGET? (yes/no)"* before executing.
+
+### Recon Workflow
+
+The model follows a logical chain automatically — you don't need to direct each step:
+
+1. **nmap** (`-sV -T4 -Pn`) to discover open ports and identify services
+2. **nikto** or **gobuster** against any discovered web ports
+3. **wpscan** if WordPress is detected
+
+Example prompts:
+```
+scan 192.168.1.50 for open ports and services
+do a directory brute-force against http://192.168.1.50
+check if this web server is vulnerable
+run a full recon on 10.10.10.5
+```
+
+### Default Wordlists (on Kali server)
+
+| Tool | Default Wordlist |
+|------|-----------------|
+| gobuster / dirb | `/usr/share/wordlists/dirb/common.txt` |
+| gobuster (big scan) | `/usr/share/wordlists/dirb/big.txt` |
+| hydra / john | `/usr/share/wordlists/rockyou.txt` |
+
 ## Memory
 
 The model maintains a persistent `memory/MEMORY.md` file across sessions. It reads this at startup and writes to it using the `save_memory` tool when you share preferences, project context, or facts about yourself. You can view it with `/memory` and edit it directly like any text file.
@@ -186,10 +250,11 @@ The model maintains a persistent `memory/MEMORY.md` file across sessions. It rea
 │   └── MEMORY.md           # Persistent memory (gitignored)
 ├── sessions/               # Saved sessions (gitignored)
 ├── tools/
-│   ├── __init__.py         # Tool definitions
+│   ├── __init__.py         # Tool definitions (standard + Kali)
 │   ├── file_tools.py       # File read/write/edit/glob/grep
 │   ├── bash_tool.py        # Bash execution with allow/deny enforcement
-│   └── search_tool.py      # SearXNG search + web fetch
+│   ├── search_tool.py      # SearXNG search + web fetch
+│   └── kali_tool.py        # mcp-kali-server integration
 ├── requirements.txt
 ├── install.sh
 └── README.md
