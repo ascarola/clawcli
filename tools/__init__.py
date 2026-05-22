@@ -187,8 +187,9 @@ KALI_TOOL_DEFINITIONS = [
                 "  enum4linux: target, additional_args\n"
                 "  sqlmap:    url, data, additional_args  [DESTRUCTIVE — requires confirmation]\n"
                 "  hydra:     target, service, username, username_file, password, password_file (default /usr/share/wordlists/rockyou.txt), additional_args  [DESTRUCTIVE]\n"
-                "  john:      hash_file, wordlist (default /usr/share/wordlists/rockyou.txt), format, additional_args  [DESTRUCTIVE]\n"
-                "  command:   command (arbitrary shell string for cases not covered above)"
+                "  john:       hash_file, wordlist (default /usr/share/wordlists/rockyou.txt), format, additional_args  [DESTRUCTIVE]\n"
+                "  metasploit: module, options (dict of module options), additional_args  [DESTRUCTIVE — requires confirmation]\n"
+                "  command:    command (arbitrary shell string for cases not covered above)"
             ),
             "parameters": {
                 "type": "object",
@@ -196,7 +197,7 @@ KALI_TOOL_DEFINITIONS = [
                     "tool": {
                         "type": "string",
                         "enum": ["nmap", "nikto", "gobuster", "dirb", "wpscan",
-                                 "enum4linux", "sqlmap", "hydra", "john", "command"],
+                                 "enum4linux", "sqlmap", "hydra", "john", "metasploit", "command"],
                         "description": "The security tool to invoke"
                     },
                     "params": {

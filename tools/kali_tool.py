@@ -5,16 +5,17 @@ import requests
 DESTRUCTIVE_TOOLS = {"hydra", "john", "sqlmap", "metasploit"}
 
 _TOOL_ENDPOINTS = {
-    "nmap":      "/api/tools/nmap",
-    "nikto":     "/api/tools/nikto",
-    "gobuster":  "/api/tools/gobuster",
-    "dirb":      "/api/tools/dirb",
-    "wpscan":    "/api/tools/wpscan",
-    "enum4linux": "/api/tools/enum4linux",
-    "sqlmap":    "/api/tools/sqlmap",
-    "hydra":     "/api/tools/hydra",
-    "john":      "/api/tools/john",
-    "command":   "/api/command",
+    "nmap":       "/api/tools/nmap",
+    "nikto":      "/api/tools/nikto",
+    "gobuster":   "/api/tools/gobuster",
+    "dirb":       "/api/tools/dirb",
+    "wpscan":     "/api/tools/wpscan",
+    "enum4linux":  "/api/tools/enum4linux",
+    "sqlmap":     "/api/tools/sqlmap",
+    "hydra":      "/api/tools/hydra",
+    "john":       "/api/tools/john",
+    "metasploit": "/api/tools/metasploit",
+    "command":    "/api/command",
 }
 
 _DEFAULTS = {
