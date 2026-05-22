@@ -181,13 +181,13 @@ KALI_TOOL_DEFINITIONS = [
                 "Tool param reference:\n"
                 "  nmap:      target, scan_type (default -sV), ports, additional_args (default -T4 -Pn)\n"
                 "  nikto:     target, additional_args\n"
-                "  gobuster:  url, mode (dir/dns/vhost), wordlist (default /usr/share/wordlists/dirb/common.txt), additional_args\n"
-                "  dirb:      url, wordlist, additional_args\n"
+                "  gobuster:  url, mode (dir/dns/vhost), wordlist (default /usr/share/wordlists/dirb/common.txt; big scan: /usr/share/wordlists/dirb/big.txt), additional_args\n"
+                "  dirb:      url, wordlist (default /usr/share/wordlists/dirb/common.txt), additional_args\n"
                 "  wpscan:    url, additional_args\n"
                 "  enum4linux: target, additional_args\n"
                 "  sqlmap:    url, data, additional_args  [DESTRUCTIVE — requires confirmation]\n"
-                "  hydra:     target, service, username, username_file, password, password_file, additional_args  [DESTRUCTIVE]\n"
-                "  john:      hash_file, wordlist, format, additional_args  [DESTRUCTIVE]\n"
+                "  hydra:     target, service, username, username_file, password, password_file (default /usr/share/wordlists/rockyou.txt), additional_args  [DESTRUCTIVE]\n"
+                "  john:      hash_file, wordlist (default /usr/share/wordlists/rockyou.txt), format, additional_args  [DESTRUCTIVE]\n"
                 "  command:   command (arbitrary shell string for cases not covered above)"
             ),
             "parameters": {

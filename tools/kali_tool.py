@@ -20,6 +20,9 @@ _TOOL_ENDPOINTS = {
 _DEFAULTS = {
     "nmap":     {"scan_type": "-sV", "additional_args": "-T4 -Pn"},
     "gobuster": {"wordlist": "/usr/share/wordlists/dirb/common.txt"},
+    "dirb":     {"wordlist": "/usr/share/wordlists/dirb/common.txt"},
+    "hydra":    {"password_file": "/usr/share/wordlists/rockyou.txt"},
+    "john":     {"wordlist": "/usr/share/wordlists/rockyou.txt"},
 }
 
 
