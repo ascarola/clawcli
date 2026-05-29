@@ -46,8 +46,17 @@ OLLAMA_URL=http://10.0.0.10:11434 \
 OLLAMA_MODEL=llama3.1:8b \
 SEARXNG_URL=http://10.0.0.20:8888 \
 KALI_SERVER_URL=http://10.0.0.5:5050 \
-bash install.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/ascarola/clawcli/main/install.sh)
 ```
+
+### Uninstall
+
+```bash
+rm -rf ~/clawcli ~/.clawcli_history
+sudo rm -f /usr/local/bin/clawcli /opt/homebrew/bin/clawcli ~/.local/bin/clawcli
+```
+
+This removes the repo, command history, and all symlinks. Everything else (sessions, memory, config, audit log) lives inside `~/clawcli/` and is removed by the first command.
 
 ## Model Recommendations
 
