@@ -67,7 +67,7 @@ if command -v apt-get >/dev/null 2>&1; then
     python3 -m pip --version >/dev/null 2>&1  || MISSING="$MISSING python3-pip"
     if [ -n "$MISSING" ]; then
         echo "==> Installing missing system packages:$MISSING"
-        sudo apt-get install -y $MISSING
+        sudo apt-get install -y $MISSING  # shellcheck disable=SC2086 — intentional word-split
     fi
 fi
 
@@ -77,7 +77,11 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     IS_UPDATE=1
     echo "==> Updating existing installation at $INSTALL_DIR..."
     git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL"
-    git -C "$INSTALL_DIR" pull --ff-only
+    if ! git -C "$INSTALL_DIR" pull --ff-only; then
+        echo "==> Fast-forward failed (remote history may have changed); resetting to origin/main..."
+        git -C "$INSTALL_DIR" fetch origin
+        git -C "$INSTALL_DIR" reset --hard origin/main
+    fi
 else
     if [ -d "$INSTALL_DIR" ]; then
         echo "WARNING: $INSTALL_DIR exists but is not a git repo."
@@ -182,7 +186,7 @@ except Exception:
         if [ "$IS_INTERACTIVE" -eq 1 ]; then
             echo ""
             if ask_yn "  Do you have an mcp-kali-server instance? (enables security scanning)" "n"; then
-                KALI_SERVER_URL=$(ask "  mcp-kali-server URL" "http://192.168.1.101:5050")
+                KALI_SERVER_URL=$(ask "  mcp-kali-server URL" "http://10.0.0.5:5050")
             fi
         fi
     fi
