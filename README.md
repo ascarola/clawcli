@@ -14,6 +14,7 @@ A Claude Code-style AI assistant for the terminal, powered entirely by a local [
 - **SearXNG integration** — optional web research via your own SearXNG instance
 - **Kali security scanning** — optional integration with [mcp-kali-server](https://github.com/Wh0am123/MCP-Kali-Server) to run nmap, nikto, gobuster, hydra, sqlmap, metasploit, and more via natural language
 - **Safety controls** — configurable allow/deny lists for bash commands; destructive security tools require explicit confirmation; audit log of every command run
+- **Context management** — color-coded context usage (yellow at 70%, red at 90%); auto-compact at a configurable threshold to keep long sessions running smoothly
 
 ## Requirements
 
@@ -88,6 +89,8 @@ Switch models at any time with `/model llama3.1:8b` or `--model llama3.1:8b`.
 | `bash_max_timeout` | `1800` | Maximum allowed bash command timeout in seconds |
 | `kali_server_url` | `""` | mcp-kali-server URL (leave empty to disable) |
 | `kali_timeout` | `300` | Timeout in seconds for Kali tool requests |
+| `max_tool_result_chars` | `20000` | Truncate tool results longer than this before sending to the model |
+| `auto_compact_threshold` | `0.80` | Auto-compact when context fills to this fraction (set to `0` to disable) |
 
 ## Usage
 
@@ -138,10 +141,15 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/memory` | Show persistent memory |
 | `/clear` | Clear conversation history |
 | `/compact` | Summarize history to free context window |
+| `/undo` | Remove the last exchange from history |
+| `/export [file]` | Save conversation to a Markdown file |
 | `/config` | Show current config |
 | `/cwd <path>` | Change working directory |
 | `/model list` | List available models on your Ollama server |
 | `/model <name>` | Switch Ollama model (context window auto-detected) |
+| `/searxng <url>` | Set SearXNG URL and save to config |
+| `/searxng` | Show current SearXNG URL and reachability status |
+| `/searxng disable` | Remove SearXNG from config |
 | `/kali <url>` | Set mcp-kali-server URL and save to config |
 | `/kali` | Show current Kali server URL and reachability status |
 | `/kali disable` | Remove Kali server from config |
