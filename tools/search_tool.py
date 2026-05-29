@@ -6,6 +6,7 @@ import ipaddress
 import socket
 import concurrent.futures
 import requests
+from html.parser import HTMLParser
 from urllib.parse import urlparse, urlunparse
 
 try:
@@ -13,6 +14,38 @@ try:
     _CURL_CFFI_AVAILABLE = True
 except ImportError:
     _CURL_CFFI_AVAILABLE = False
+
+class _TextExtractor(HTMLParser):
+    """Strip tags and skip script/style content for plain-text extraction."""
+    def __init__(self):
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in ("script", "style"):
+            self._skip = True
+
+    def handle_endtag(self, tag):
+        if tag.lower() in ("script", "style"):
+            self._skip = False
+
+    def handle_data(self, data):
+        if not self._skip:
+            self._parts.append(data)
+
+    def get_text(self) -> str:
+        return re.sub(r"\s+", " ", " ".join(self._parts)).strip()
+
+
+def _html_to_text(html: str) -> str:
+    parser = _TextExtractor()
+    try:
+        parser.feed(html)
+        return parser.get_text()
+    except Exception:
+        return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+
 
 _PRIVATE_NETS = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -133,11 +166,6 @@ def web_fetch(url: str, max_chars: int = 8000) -> str:
         content_type = resp.headers.get("content-type", "")
         if "json" in content_type:
             return json.dumps(resp.json(), indent=2)[:max_chars]
-        text = resp.text
-        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text[:max_chars]
+        return _html_to_text(resp.text)[:max_chars]
     except Exception as e:
         return f"Fetch error: {e}"
