@@ -12,7 +12,7 @@ A Claude Code-style AI assistant for the terminal, powered entirely by a local [
 - **Update checking** — notified on startup when a newer version is available; update in-session with `/update`
 - **Bot-resistant web fetch** — uses Chrome TLS impersonation via `curl_cffi` to bypass Cloudflare and common bot-detection
 - **SearXNG integration** — optional web research via your own SearXNG instance
-- **Kali security scanning** — optional integration with [mcp-kali-server](https://github.com/ascarola/mcp-kali-server) to run nmap, nikto, gobuster, hydra, sqlmap, metasploit, and more via natural language
+- **Kali security scanning** — optional integration with [mcp-kali-server](https://github.com/Wh0am123/MCP-Kali-Server) to run nmap, nikto, gobuster, hydra, sqlmap, metasploit, and more via natural language
 - **Safety controls** — configurable allow/deny lists for bash commands; destructive security tools require explicit confirmation; audit log of every command run
 
 ## Requirements
@@ -177,7 +177,7 @@ Every bash command executed is logged to `audit.log` with timestamp and exit cod
 
 ## Kali Security Scanning
 
-CLAWCLI integrates with [mcp-kali-server](https://github.com/ascarola/mcp-kali-server), a Flask REST API that exposes Kali Linux security tools over HTTP. When configured, the model can drive full recon workflows using natural language.
+CLAWCLI integrates with [mcp-kali-server](https://github.com/Wh0am123/MCP-Kali-Server), a Flask REST API that exposes Kali Linux security tools over HTTP. When configured, the model can drive full recon workflows using natural language.
 
 ### Setup
 
