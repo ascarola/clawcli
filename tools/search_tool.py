@@ -41,13 +41,14 @@ def _resolve_url(url: str, timeout: float = 5.0) -> tuple[str, str] | None:
         host = parsed.hostname or ""
         if not host:
             return None
-        # Already an IP literal — check it directly
+        # If host is an IP literal, check it directly without DNS resolution
         try:
+            ipaddress.ip_address(host)  # raises ValueError for hostnames
             if _is_private_ip(host):
                 return None
             return (host, host)
         except ValueError:
-            pass
+            pass  # not an IP literal — fall through to DNS resolution
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
             future = ex.submit(socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)

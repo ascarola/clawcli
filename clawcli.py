@@ -649,7 +649,11 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
         max_result_chars = config.get("max_tool_result_chars", 20000)
         tool_results = []
         for (name, args), result in zip(tool_infos, raw_results):
-            call_hash = hash((name, json.dumps(args, sort_keys=True), result))
+            try:
+                _args_str = json.dumps(args, sort_keys=True)
+            except (TypeError, ValueError):
+                _args_str = repr(args)
+            call_hash = hash((name, _args_str, result))
             if call_hash == last_call_hash:
                 result = f"Loop detected: tool '{name}' returned the same result twice in a row. Try a different approach."
             last_call_hash = call_hash
@@ -738,7 +742,7 @@ def compact_messages(messages: list, config: dict) -> list:
     system_msg = next((m for m in messages if m.get("role") == "system"), None)
     try:
         response = chat(
-            [{"role": "system", "content": system_msg["content"] if system_msg else ""},
+            [{"role": "system", "content": system_msg.get("content", "") if system_msg else ""},
              {"role": "user", "content": summary_prompt}],
             config,
             stream=False,
@@ -842,6 +846,10 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         if arg.lower() == "disable":
             config.pop("kali_server_url", None)
             CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            for m in messages:
+                if m.get("role") == "system":
+                    m["content"] = build_system_prompt(config)
+                    break
             console.print("[dim]Kali server disabled and removed from config.[/dim]")
         elif arg:
             url = arg.rstrip("/")
