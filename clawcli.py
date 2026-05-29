@@ -14,6 +14,7 @@ import argparse
 import signal
 from datetime import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from rich.console import Console
@@ -587,13 +588,26 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
         if not tool_calls:
             if prompt_tokens:
                 pct = (prompt_tokens / ctx_window) * 100
+                if pct >= 90:
+                    ctx_color = "red"
+                elif pct >= 70:
+                    ctx_color = "yellow"
+                else:
+                    ctx_color = "dim"
                 console.print(
-                    f"[dim]  context: {prompt_tokens:,} / {ctx_window:,} tokens ({pct:.1f}%)[/dim]"
+                    f"[{ctx_color}]  context: {prompt_tokens:,} / {ctx_window:,} tokens ({pct:.1f}%)[/{ctx_color}]"
                 )
+                threshold = config.get("auto_compact_threshold", 0.80)
+                if threshold and (pct / 100) >= threshold:
+                    console.print(
+                        f"[yellow]⚠ Context at {pct:.0f}% — auto-compacting to free space...[/yellow]"
+                    )
+                    messages = compact_messages(messages, config)
             break
 
-        # Execute all tool calls and collect results
-        tool_results = []
+        # Prepare tool calls: resolve pronouns and display all before executing
+        _READ_ONLY_TOOLS = {"read_file", "glob_files", "grep_files", "web_search", "web_fetch"}
+        tool_infos = []
         for tc in tool_calls:
             fn   = tc.get("function", {})
             name = fn.get("name", "")
@@ -611,22 +625,42 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
                     console.print(f"[dim]  (resolved: \"{original}\" → \"{args['query']}\")[/dim]")
 
             render_tool_call(name, args)
-            result = dispatch_tool(name, args, config, confirm=config.get("confirm_bash", False))
+            tool_infos.append((name, args))
 
+        # Run read-only batches in parallel; write/bash/kali run sequentially to avoid races
+        use_parallel = (
+            len(tool_infos) > 1
+            and all(n in _READ_ONLY_TOOLS for n, _ in tool_infos)
+        )
+        if use_parallel:
+            with ThreadPoolExecutor(max_workers=min(len(tool_infos), 4)) as pool:
+                futures = [
+                    pool.submit(dispatch_tool, n, a, config, config.get("confirm_bash", False))
+                    for n, a in tool_infos
+                ]
+                raw_results = [f.result() for f in futures]
+        else:
+            raw_results = [
+                dispatch_tool(n, a, config, confirm=config.get("confirm_bash", False))
+                for n, a in tool_infos
+            ]
+
+        # Post-process: loop detection, size cap, preview, collect
+        max_result_chars = config.get("max_tool_result_chars", 20000)
+        tool_results = []
+        for (name, args), result in zip(tool_infos, raw_results):
             call_hash = hash((name, json.dumps(args, sort_keys=True), result))
             if call_hash == last_call_hash:
                 result = f"Loop detected: tool '{name}' returned the same result twice in a row. Try a different approach."
             last_call_hash = call_hash
 
-            # Show brief result preview
+            if len(result) > max_result_chars:
+                result = result[:max_result_chars] + f"\n\n[... truncated — {len(result) - max_result_chars:,} chars omitted]"
+
             preview = result[:1000] + "…" if len(result) > 1000 else result
             console.print(f"[dim]  → {preview}[/dim]")
 
-            tool_results.append({
-                "role": "tool",
-                "content": result,
-                "name": name,
-            })
+            tool_results.append({"role": "tool", "content": result, "name": name})
 
         messages.extend(tool_results)
         # Don't break on loop detection — let the model see the message and pivot.
@@ -650,17 +684,21 @@ def print_welcome(config: dict):
 def show_help():
     console.print(Panel(
         "[bold]Commands:[/bold]\n"
-        "  /help          — show this help\n"
-        "  /update        — pull latest version (restart to apply)\n"
-        "  /doctor        — check Ollama, SearXNG, and dependencies\n"
-        "  /memory        — show current memory\n"
-        "  /clear         — clear conversation history\n"
-        "  /compact       — summarize history to free context window\n"
-        "  /config        — show current config\n"
-        "  /cwd <path>    — change working directory\n"
-        "  /model list    — list available Ollama models\n"
-        "  /model <name>  — switch Ollama model\n"
-        "  /exit          — quit and save session\n\n"
+        "  /help               — show this help\n"
+        "  /update             — pull latest version (restart to apply)\n"
+        "  /doctor             — check Ollama, SearXNG, and dependencies\n"
+        "  /memory             — show current memory\n"
+        "  /clear              — clear conversation history\n"
+        "  /compact            — summarize history to free context window\n"
+        "  /undo               — remove the last exchange from history\n"
+        "  /export [file]      — save conversation to a Markdown file\n"
+        "  /config             — show current config\n"
+        "  /cwd <path>         — change working directory\n"
+        "  /model list         — list available Ollama models\n"
+        "  /model <name>       — switch Ollama model\n"
+        "  /searxng <url>      — set SearXNG URL (or /searxng to check, /searxng disable)\n"
+        "  /kali <url>         — set Kali server URL (or /kali to check, /kali disable)\n"
+        "  /exit               — quit and save session\n\n"
         "[bold]Special prompts:[/bold]\n"
         "  research <topic>  — search SearXNG then summarize\n\n"
         "[bold]Sessions:[/bold]\n"
@@ -830,6 +868,87 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print(f"Kali server: [cyan]{kali_url}[/cyan]  {status}")
             else:
                 console.print("[dim]Kali server not configured. Usage: /kali <url>[/dim]")
+        return True, messages
+
+    elif command == "/undo":
+        last_user_idx = None
+        for i in range(len(messages) - 1, -1, -1):
+            if (messages[i].get("role") == "user"
+                    and messages[i].get("content") != "[Conversation compacted — summary of prior context below]"):
+                last_user_idx = i
+                break
+        if last_user_idx is None:
+            console.print("[dim]Nothing to undo.[/dim]")
+        else:
+            removed = len(messages) - last_user_idx
+            messages = messages[:last_user_idx]
+            console.print(f"[dim]Undid last exchange ({removed} messages removed).[/dim]")
+        return True, messages
+
+    elif command == "/export":
+        filename = arg.strip() if arg else f"clawcli-export-{datetime.now().strftime('%Y-%m-%d-%H%M%S')}.md"
+        path = Path(filename).expanduser()
+        lines = [f"# CLAWCLI Export — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"]
+        for m in messages:
+            role = m.get("role")
+            content = m.get("content") or ""
+            if not content.strip() or role == "system":
+                continue
+            if role == "user":
+                lines.append(f"## You\n\n{content.strip()}\n\n")
+            elif role == "assistant":
+                lines.append(f"## Assistant\n\n{content.strip()}\n\n")
+            elif role == "tool":
+                snippet = content[:2000] + ("…" if len(content) > 2000 else "")
+                lines.append(f"### Tool: {m.get('name', '?')}\n\n```\n{snippet}\n```\n\n")
+        path.write_text("".join(lines))
+        console.print(f"[dim]Exported to {path}[/dim]")
+        return True, messages
+
+    elif command == "/searxng":
+        if arg.lower() == "disable":
+            config.pop("searxng_url", None)
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            for m in messages:
+                if m.get("role") == "system":
+                    m["content"] = build_system_prompt(config)
+                    break
+            console.print("[dim]SearXNG disabled and removed from config.[/dim]")
+        elif arg:
+            url = arg.rstrip("/")
+            try:
+                resp = requests.get(
+                    f"{url}/search",
+                    params={"q": "test", "format": "json"},
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                config["searxng_url"] = url
+                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                for m in messages:
+                    if m.get("role") == "system":
+                        m["content"] = build_system_prompt(config)
+                        break
+                console.print(f"[green]✓[/green]  SearXNG set to {url}")
+            except Exception as e:
+                console.print(f"[red]✗[/red]  Cannot reach SearXNG at {url}: {e}")
+                console.print("[dim]  URL not saved — fix the connection and try again.[/dim]")
+        else:
+            searxng_url = config.get("searxng_url", "")
+            if searxng_url:
+                try:
+                    resp = requests.get(
+                        f"{searxng_url}/search",
+                        params={"q": "test", "format": "json"},
+                        timeout=5,
+                    )
+                    resp.raise_for_status()
+                    status = "[green]✓  reachable[/green]"
+                except Exception:
+                    status = "[red]✗  unreachable[/red]"
+                console.print(f"SearXNG: [cyan]{searxng_url}[/cyan]  {status}")
+            else:
+                console.print("[dim]SearXNG not configured. Usage: /searxng <url>[/dim]")
         return True, messages
 
     elif command in ("/exit", "/quit", "/q"):
@@ -1075,18 +1194,21 @@ def do_update():
 
 
 _SLASH_COMMANDS = [
-    ("/help",         "show help"),
-    ("/update",       "pull latest version (restart to apply)"),
-    ("/doctor",       "check Ollama, SearXNG, dependencies"),
-    ("/memory",       "show persistent memory"),
-    ("/clear",        "clear conversation history"),
-    ("/compact",      "summarize history to free context window"),
-    ("/config",       "show current config"),
-    ("/cwd <path>",   "change working directory"),
-    ("/model list",   "list available Ollama models"),
-    ("/model <name>", "switch Ollama model"),
-    ("/kali <url>",   "set Kali security server URL (or /kali to check status, /kali disable)"),
-    ("/exit",         "quit and save session"),
+    ("/help",              "show help"),
+    ("/update",            "pull latest version (restart to apply)"),
+    ("/doctor",            "check Ollama, SearXNG, dependencies"),
+    ("/memory",            "show persistent memory"),
+    ("/clear",             "clear conversation history"),
+    ("/compact",           "summarize history to free context window"),
+    ("/undo",              "remove the last exchange from history"),
+    ("/export [file]",     "save conversation to a Markdown file"),
+    ("/config",            "show current config"),
+    ("/cwd <path>",        "change working directory"),
+    ("/model list",        "list available Ollama models"),
+    ("/model <name>",      "switch Ollama model"),
+    ("/searxng <url>",     "set SearXNG URL (or /searxng to check status, /searxng disable)"),
+    ("/kali <url>",        "set Kali security server URL (or /kali to check status, /kali disable)"),
+    ("/exit",              "quit and save session"),
 ]
 
 
@@ -1200,6 +1322,18 @@ def main():
     print_welcome(config)
     _finish_update_check(update_thread)
 
+    # Mutable holder so the SIGTERM handler always sees the latest messages list
+    messages_holder = [messages]
+
+    def _sigterm_handler(signum, frame):
+        try:
+            save_session(session_id, messages_holder[0], os.getcwd())
+        except Exception:
+            pass
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
+
     kb = KeyBindings()
 
     def _insert_newline(event):
@@ -1226,28 +1360,39 @@ def main():
         complete_while_typing=True,
     )
 
-    while True:
-        try:
-            cwd_short = os.getcwd().replace(str(Path.home()), "~")
-            user_input = session.prompt(f"\n[{cwd_short}] > ", default="")
-        except KeyboardInterrupt:
-            console.print("\n[dim]Cancelled. Type /exit to quit.[/dim]")
-            continue
-        except EOFError:
-            save_session(session_id, messages, os.getcwd())
-            print_resume_hint(session_id)
-            break
+    try:
+        while True:
+            try:
+                cwd_short = os.getcwd().replace(str(Path.home()), "~")
+                user_input = session.prompt(f"\n[{cwd_short}] > ", default="")
+            except KeyboardInterrupt:
+                console.print("\n[dim]Cancelled. Type /exit to quit.[/dim]")
+                continue
+            except EOFError:
+                save_session(session_id, messages, os.getcwd())
+                print_resume_hint(session_id)
+                break
 
-        user_input = user_input.strip()
-        if not user_input:
-            continue
-
-        if user_input.startswith("/"):
-            handled, messages = handle_slash_command(user_input, config, messages, session_id)
-            if handled:
+            user_input = user_input.strip()
+            if not user_input:
                 continue
 
-        messages = run_agentic_loop(user_input, messages, config)
+            if user_input.startswith("/"):
+                handled, messages = handle_slash_command(user_input, config, messages, session_id)
+                messages_holder[0] = messages
+                if handled:
+                    continue
+
+            messages = run_agentic_loop(user_input, messages, config)
+            messages_holder[0] = messages
+    except Exception as _exc:
+        console.print(f"[red]Unexpected error: {_exc}[/red]")
+        try:
+            save_session(session_id, messages_holder[0], os.getcwd())
+            print_resume_hint(session_id)
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":
