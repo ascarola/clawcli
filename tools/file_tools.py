@@ -6,22 +6,32 @@ import glob as glob_module
 import subprocess  # nosec B404
 from pathlib import Path
 
-# Sensitive paths that are always blocked from read/write
+# Sensitive paths that are always blocked from read/write/search
 _BLOCKED_PATHS = [
     Path("/etc/shadow"),
     Path("/etc/gshadow"),
     Path("/etc/master.passwd"),
+    Path("/etc/passwd"),
+    Path("/etc/sudoers"),
+    Path("/etc/crontab"),
+    Path("/proc/self/environ"),
 ]
 
-_BLOCKED_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".ppk"}
+_BLOCKED_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".ppk", ".env"}
 
 _BLOCKED_DIRS = [
     Path.home() / ".ssh",
     Path.home() / ".secrets",
     Path.home() / ".gnupg",
+    Path.home() / ".aws",
+    Path.home() / ".kube",
+    Path.home() / ".config" / "gcloud",
     Path("/root/.ssh"),
     Path("/root/.secrets"),
     Path("/root/.gnupg"),
+    Path("/root/.aws"),
+    Path("/root/.kube"),
+    Path("/proc/self"),
 ]
 
 
@@ -194,7 +204,13 @@ def replace_lines(file_path: str, start_line: int, end_line: int, new_content: s
 def glob_files(pattern: str, directory: str = None) -> str:
     base = Path(directory).expanduser().resolve() if directory else Path.cwd()
     try:
-        matches = sorted(base.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        import itertools
+        raw = base.glob(pattern)
+        # Cap generator early to avoid exhausting memory on huge trees
+        candidates = list(itertools.islice(raw, 5000))
+        # Filter out sensitive paths
+        matches = [p for p in candidates if not _is_sensitive(p.resolve())]
+        matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         if not matches:
             return f"No files matched pattern: {pattern}"
         return "\n".join(str(p) for p in matches[:200])
@@ -222,6 +238,9 @@ def _has_rg() -> bool:
 
 
 def _rg_search(pattern, path, glob_pat, output_mode, case_insensitive, context_lines):
+    resolved_path = Path(path).expanduser().resolve() if path else None
+    if resolved_path and _is_sensitive(resolved_path):
+        return f"Error: Searching {path} is not permitted — sensitive path blocked."
     cmd = ["rg"]
     if case_insensitive:
         cmd.append("-i")
@@ -236,8 +255,8 @@ def _rg_search(pattern, path, glob_pat, output_mode, case_insensitive, context_l
     if glob_pat:
         cmd.extend(["--glob", glob_pat])
     cmd.append(pattern)
-    if path:
-        cmd.append(str(Path(path).expanduser().resolve()))
+    if resolved_path:
+        cmd.append(str(resolved_path))
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603 B607
         out = result.stdout.strip()
@@ -249,6 +268,9 @@ def _rg_search(pattern, path, glob_pat, output_mode, case_insensitive, context_l
 
 
 def _grep_search(pattern, path, glob_pat, output_mode, case_insensitive, context_lines):
+    resolved_path = Path(path).expanduser().resolve() if path else None
+    if resolved_path and _is_sensitive(resolved_path):
+        return f"Error: Searching {path} is not permitted — sensitive path blocked."
     cmd = ["grep", "-r"]
     if case_insensitive:
         cmd.append("-i")
@@ -263,7 +285,7 @@ def _grep_search(pattern, path, glob_pat, output_mode, case_insensitive, context
     if glob_pat:
         cmd.extend(["--include", glob_pat])
     cmd.append(pattern)
-    target = str(Path(path).expanduser().resolve()) if path else "."
+    target = str(resolved_path) if resolved_path else "."
     cmd.append(target)
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603 B607

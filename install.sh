@@ -5,9 +5,6 @@
 #
 # Non-interactive (env var overrides):
 #   OLLAMA_URL=http://myserver:11434 OLLAMA_MODEL=llama3.2:3b bash install.sh
-#
-# Private repo (token auth):
-#   GITHUB_TOKEN=github_pat_xxx bash install.sh
 set -e
 
 REPO_OWNER="${REPO_OWNER:-ascarola}"
@@ -51,11 +48,7 @@ ask_yn() {
 }
 
 # ── Build repo URL ─────────────────────────────────────────────────────────────
-if [ -n "$GITHUB_TOKEN" ]; then
-    REPO_URL="https://${REPO_OWNER}:${GITHUB_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.git"
-else
-    REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
-fi
+REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo ""

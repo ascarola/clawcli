@@ -42,10 +42,10 @@ The installer will ask for your Ollama server URL, model, and optionally SearXNG
 ### Non-interactive install (CI / headless)
 
 ```bash
-OLLAMA_URL=http://192.168.1.10:11434 \
+OLLAMA_URL=http://10.0.0.10:11434 \
 OLLAMA_MODEL=llama3.1:8b \
-SEARXNG_URL=http://192.168.1.20:8888 \
-KALI_SERVER_URL=http://192.168.1.101:5050 \
+SEARXNG_URL=http://10.0.0.20:8888 \
+KALI_SERVER_URL=http://10.0.0.5:5050 \
 bash install.sh
 ```
 
@@ -191,7 +191,7 @@ CLAWCLI integrates with [mcp-kali-server](https://github.com/Wh0am123/MCP-Kali-S
 
 ```bash
 # Inside a clawcli session
-/kali http://192.168.1.101:5050
+/kali http://10.0.0.5:5050
 ```
 
 This health-checks the server, saves the URL to `config.json`, and immediately enables scanning. Use `/kali` to check status or `/kali disable` to remove it.
@@ -224,8 +224,8 @@ The model follows a logical chain automatically — you don't need to direct eac
 
 Example prompts:
 ```
-scan 192.168.1.50 for open ports and services
-do a directory brute-force against http://192.168.1.50
+scan 10.0.0.50 for open ports and services
+do a directory brute-force against http://10.0.0.50
 check if this web server is vulnerable
 run a full recon on 10.10.10.5
 ```

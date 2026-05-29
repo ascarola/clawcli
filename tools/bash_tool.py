@@ -10,7 +10,15 @@ from pathlib import Path
 
 _audit_logger = logging.getLogger("clawcli.audit")
 
-_SECRET_RE = _re.compile(r'[A-Za-z0-9+/=]{50,}')
+_SECRET_RE = _re.compile(
+    r'(?:'
+    r'gh[ps]_[A-Za-z0-9]{36,}'                                      # GitHub PATs
+    r'|github_pat_[A-Za-z0-9_]{36,}'                                 # GitHub fine-grained PATs
+    r'|(?:api[_-]?key|token|secret|password|passwd|pwd)\s*[=:]\s*\S{8,}'  # key=value pairs
+    r'|[A-Za-z0-9+/=]{50,}'                                          # long base64 strings
+    r')',
+    _re.IGNORECASE,
+)
 
 
 def _redact(cmd: str) -> str:

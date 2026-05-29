@@ -2,7 +2,7 @@
 
 import requests
 
-DESTRUCTIVE_TOOLS = {"hydra", "john", "sqlmap", "metasploit"}
+DESTRUCTIVE_TOOLS = {"hydra", "john", "sqlmap", "metasploit", "command"}
 
 _TOOL_ENDPOINTS = {
     "nmap":       "/api/tools/nmap",
