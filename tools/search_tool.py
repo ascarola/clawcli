@@ -1,4 +1,5 @@
 """Web search via SearXNG and URL fetching."""
+from __future__ import annotations
 
 import re
 import json

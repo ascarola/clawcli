@@ -1,4 +1,5 @@
 """Kali Linux security tool integration via mcp-kali-server REST API."""
+from __future__ import annotations
 
 import requests
 

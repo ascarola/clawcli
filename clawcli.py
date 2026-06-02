@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """CLAWCLI — A Claude Code-like AI assistant powered by Ollama/gemma4:26b"""
+from __future__ import annotations
 
 import os
 import sys

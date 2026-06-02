@@ -18,7 +18,7 @@ A Claude Code-style AI assistant for the terminal, powered entirely by a local [
 
 ## Requirements
 
-- **Python 3.10+**
+- **Python 3.9+**
 - **[Ollama](https://ollama.com)** running locally or on your network
 - A pulled Ollama model (see [Model Recommendations](#model-recommendations) below)
 - **SearXNG** *(optional)* — self-hosted search for `research <topic>` prompts
