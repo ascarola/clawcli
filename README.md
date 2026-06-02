@@ -277,6 +277,16 @@ The model maintains a persistent `memory/MEMORY.md` file across sessions. It rea
 └── README.md
 ```
 
+## Dependency Updates (Dependabot)
+
+Dependabot is enabled and will open pull requests when new versions of dependencies are available. Before merging any Dependabot PR, verify that the target version actually exists on PyPI:
+
+```bash
+pip index versions <package>
+```
+
+Dependabot reads GitHub Security Advisories and can reference a "fixed in" version before it has been published to PyPI. Merging such a PR will break installs. If the listed version is not in the output of the command above, close the PR and wait for the real release.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
