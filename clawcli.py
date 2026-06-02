@@ -2,6 +2,11 @@
 """CLAWCLI — A Claude Code-like AI assistant powered by Ollama/gemma4:26b"""
 from __future__ import annotations
 
+import warnings
+# Suppress urllib3's LibreSSL warning on macOS — harmless, just noise
+warnings.filterwarnings("ignore", message=".*LibreSSL.*")
+warnings.filterwarnings("ignore", message=".*NotOpenSSLWarning.*")
+
 import os
 import sys
 import json
