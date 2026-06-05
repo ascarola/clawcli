@@ -1,6 +1,6 @@
 # CLAWCLI 🦞
 
-A Claude Code-style AI assistant for the terminal, powered entirely by a local [Ollama](https://ollama.com) model. No cloud APIs, no subscriptions — your machine, your data.
+A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com). No cloud APIs, no subscriptions, no API keys — your machine, your data.
 
 ## Features
 
