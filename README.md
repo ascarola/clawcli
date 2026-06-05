@@ -15,6 +15,8 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - **Kali security scanning** — optional integration with [mcp-kali-server](https://github.com/Wh0am123/MCP-Kali-Server) to run nmap, nikto, gobuster, hydra, sqlmap, metasploit, and more via natural language
 - **Safety controls** — configurable allow/deny lists for bash commands; destructive security tools require explicit confirmation; audit log of every command run
 - **Context management** — color-coded context usage (yellow at 70%, red at 90%); auto-compact at a configurable threshold to keep long sessions running smoothly
+- **Interactive model picker** — `/model` opens an arrow-key menu of available Ollama models; switch instantly without typing model names
+- **Live config tuning** — `/set` adjusts any numeric or boolean config value mid-session and persists it to `config.json`
 
 ## Requirements
 
@@ -75,7 +77,7 @@ Pull a model before running:
 ollama pull llama3.1:8b
 ```
 
-Switch models at any time with `/model llama3.1:8b` or `--model llama3.1:8b`.
+Switch models at any time with `/model` (interactive picker) or `/model llama3.1:8b` (direct), or `--model llama3.1:8b` at launch.
 
 ## Configuration
 
@@ -226,7 +228,7 @@ This health-checks the server, saves the URL to `config.json`, and immediately e
 | `hydra` | Network login brute-forcing | **Yes** |
 | `john` | Password hash cracking | **Yes** |
 | `metasploit` | Exploitation framework | **Yes** |
-| `command` | Arbitrary shell command | No |
+| `command` | Arbitrary shell command | **Yes** |
 
 Destructive tools (sqlmap, hydra, john, metasploit) always prompt: *"⚠ TOOL is a potentially destructive / high-noise tool. Proceed against TARGET? (yes/no)"* before executing.
 
