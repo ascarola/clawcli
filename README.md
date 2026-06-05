@@ -100,6 +100,7 @@ Switch models at any time with `/model llama3.1:8b` or `--model llama3.1:8b`.
 | `kali_timeout` | `300` | Timeout in seconds for Kali tool requests |
 | `max_tool_result_chars` | `20000` | Truncate tool results longer than this before sending to the model |
 | `auto_compact_threshold` | `0.80` | Auto-compact when context fills to this fraction (set to `0` to disable) |
+| `think` | `null` | Model thinking mode: `true` to enable, `false` to disable, `null` to use model default (Qwen3, etc.) |
 
 ## Usage
 
@@ -162,6 +163,9 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/kali <url>` | Set mcp-kali-server URL and save to config |
 | `/kali` | Show current Kali server URL and reachability status |
 | `/kali disable` | Remove Kali server from config |
+| `/think on` | Enable model thinking/reasoning mode |
+| `/think off` | Disable model thinking/reasoning mode |
+| `/think default` | Remove override — defer to model's built-in default |
 | `/exit` | Quit and save session |
 
 ## Multi-line Input

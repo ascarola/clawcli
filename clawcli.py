@@ -112,9 +112,16 @@ from tools.kali_tool import check_health as kali_health, run_tool as kali_run, f
 
 
 def load_config() -> dict:
+    defaults_file = CLAWCLI_DIR / "config.defaults.json"
+    cfg = {}
+    if defaults_file.exists():
+        try:
+            cfg = json.loads(defaults_file.read_text())
+        except Exception:
+            pass
     if CONFIG_FILE.exists():
-        return json.loads(CONFIG_FILE.read_text())
-    return {}
+        cfg.update(json.loads(CONFIG_FILE.read_text()))
+    return cfg
 
 
 def detect_context_window(config: dict) -> None:
@@ -464,6 +471,7 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
         "options": {
             "temperature": config.get("temperature", 0.1),
             "num_ctx": config.get("context_window", 8192),
+            **( {"think": config["think"]} if "think" in config and config["think"] is not None else {} ),
         },
     }
     resp = requests.post(url, json=payload, stream=stream, timeout=config.get("ollama_timeout", 1800))
@@ -708,12 +716,14 @@ def show_help():
         "  /model <name>       — switch Ollama model\n"
         "  /searxng <url>      — set SearXNG URL (or /searxng to check, /searxng disable)\n"
         "  /kali <url>         — set Kali server URL (or /kali to check, /kali disable)\n"
+        "  /think <on|off|default> — enable/disable model thinking mode (for Qwen3 etc.)\n"
         "  /exit               — quit and save session\n\n"
         "[bold]Special prompts:[/bold]\n"
         "  research <topic>  — search SearXNG then summarize\n\n"
         "[bold]Sessions:[/bold]\n"
         "  clawcli sessions             — list saved sessions\n"
-        "  clawcli --resume <id>        — resume a session\n"
+        "  clawcli --continue           — resume the last saved session\n"
+        "  clawcli --resume <id>        — resume a specific session by ID\n"
         "  clawcli --no-confirm         — skip bash confirmation this session\n"
         "  clawcli --confirm            — force bash confirmation this session\n\n"
         "[bold]Key bindings:[/bold]\n"
@@ -829,12 +839,13 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         elif arg:
             config["model"] = arg
             detect_context_window(config)
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
             # Rebuild system message so the model knows its own name
             for m in messages:
                 if m.get("role") == "system":
                     m["content"] = build_system_prompt(config)
                     break
-            console.print(f"[dim]Model switched to: {arg}  (context: {config['context_window']:,})[/dim]")
+            console.print(f"[dim]Model switched to: {arg}  (context: {config['context_window']:,}) — saved[/dim]")
         else:
             console.print(f"[dim]Current model: {config.get('model')}[/dim]")
         return True, messages
@@ -963,6 +974,35 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print(f"SearXNG: [cyan]{searxng_url}[/cyan]  {status}")
             else:
                 console.print("[dim]SearXNG not configured. Usage: /searxng <url>[/dim]")
+        return True, messages
+
+    elif command == "/think":
+        arg = arg.strip().lower()
+        if arg in ("on", "true", "1"):
+            config["think"] = True
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            console.print("[green]Thinking mode ON[/green] — model will show reasoning (saved to config.json)")
+        elif arg in ("off", "false", "0"):
+            config["think"] = False
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            console.print("[yellow]Thinking mode OFF[/yellow] — reasoning suppressed (saved to config.json)")
+        elif arg in ("default", "reset"):
+            config.pop("think", None)
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            console.print("[dim]Thinking mode reset to model default (removed from config.json)[/dim]")
+        elif arg == "":
+            pass  # no-op — just show current status below
+        else:
+            console.print(f"[red]Unknown argument:[/red] '{arg}'  — use: /think on | off | default")
+            return True, messages
+        think_val = config.get("think")
+        if think_val is True:
+            status = "[green]on[/green]"
+        elif think_val is False:
+            status = "[yellow]off[/yellow]"
+        else:
+            status = "[dim]model default[/dim]"
+        console.print(f"think = {status}")
         return True, messages
 
     elif command in ("/exit", "/quit", "/q"):
@@ -1222,6 +1262,7 @@ _SLASH_COMMANDS = [
     ("/model <name>",      "switch Ollama model"),
     ("/searxng <url>",     "set SearXNG URL (or /searxng to check status, /searxng disable)"),
     ("/kali <url>",        "set Kali security server URL (or /kali to check status, /kali disable)"),
+    ("/think <on|off|default>", "enable/disable model thinking mode (Qwen3 etc.)"),
     ("/exit",              "quit and save session"),
 ]
 
