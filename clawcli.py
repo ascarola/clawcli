@@ -44,6 +44,10 @@ from prompt_toolkit.widgets import Frame
 CLAWCLI_DIR = Path(__file__).resolve().parent  # resolve symlink before .parent
 
 
+class LoopAbortError(Exception):
+    """Raised when the user types 'a' at a confirmation prompt to abort the entire agentic loop."""
+
+
 def get_version() -> str:
     version_file = CLAWCLI_DIR / "VERSION"
     if version_file.exists():
@@ -251,7 +255,9 @@ def confirm_bash(command: str, description: str) -> bool:
     console.print(f"[dim]  {description}[/dim]")
     console.print(f"[white]  $ {command}[/white]")
     try:
-        answer = input("  Allow? [y/N] ").strip().lower()
+        answer = input("  Allow? [y/N/a=abort] ").strip().lower()
+        if answer in ("a", "abort"):
+            raise LoopAbortError()
         return answer in ("y", "yes")
     except (EOFError, KeyboardInterrupt):
         return False
@@ -263,7 +269,9 @@ def confirm_kali_destructive(tool: str, target: str) -> bool:
     )
     console.print(f"[dim]  Target: {target}[/dim]")
     try:
-        answer = input(f"  Proceed with {tool} against {target}? (yes/no) ").strip().lower()
+        answer = input(f"  Proceed with {tool} against {target}? [y/N/a=abort] ").strip().lower()
+        if answer in ("a", "abort"):
+            raise LoopAbortError()
         return answer in ("y", "yes")
     except (EOFError, KeyboardInterrupt):
         return False
@@ -651,18 +659,22 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             len(tool_infos) > 1
             and all(n in _READ_ONLY_TOOLS for n, _ in tool_infos)
         )
-        if use_parallel:
-            with ThreadPoolExecutor(max_workers=min(len(tool_infos), 4)) as pool:
-                futures = [
-                    pool.submit(dispatch_tool, n, a, config, config.get("confirm_bash", False))
+        try:
+            if use_parallel:
+                with ThreadPoolExecutor(max_workers=min(len(tool_infos), 4)) as pool:
+                    futures = [
+                        pool.submit(dispatch_tool, n, a, config, config.get("confirm_bash", False))
+                        for n, a in tool_infos
+                    ]
+                    raw_results = [f.result() for f in futures]
+            else:
+                raw_results = [
+                    dispatch_tool(n, a, config, confirm=config.get("confirm_bash", False))
                     for n, a in tool_infos
                 ]
-                raw_results = [f.result() for f in futures]
-        else:
-            raw_results = [
-                dispatch_tool(n, a, config, confirm=config.get("confirm_bash", False))
-                for n, a in tool_infos
-            ]
+        except LoopAbortError:
+            console.print("[yellow]Aborted — returning to prompt.[/yellow]")
+            return messages
 
         # Post-process: loop detection, size cap, preview, collect
         max_result_chars = config.get("max_tool_result_chars", 20000)
