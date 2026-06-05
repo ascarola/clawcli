@@ -17,5 +17,7 @@
   "kali_timeout": 300,
   "max_tool_result_chars": 20000,
   "auto_compact_threshold": 0.80,
-  "think": null
+  "think": null,
+  "mcp_server_url": "",
+  "mcp_bearer_token": ""
 }

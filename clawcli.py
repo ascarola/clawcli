@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape as rich_escape
 from rich.panel import Panel
 from rich.text import Text
 from rich.live import Live
@@ -117,6 +118,36 @@ from tools import TOOL_DEFINITIONS, KALI_TOOL_DEFINITIONS
 from tools.file_tools import read_file, write_file, edit_file, replace_lines, glob_files, grep_files
 from tools.bash_tool import execute_bash
 from tools.search_tool import web_search, web_fetch
+from tools.mcp_tool import MCPClient, mcp_tools_to_ollama, check_mcp_health
+
+# ── MCP state ────────────────────────────────────────────────────────────────
+_mcp_client: MCPClient | None = None
+_mcp_tool_definitions: list[dict] = []
+
+
+def init_mcp(config: dict, quiet: bool = False) -> None:
+    """Connect to MCP server and load its tools into _mcp_tool_definitions."""
+    global _mcp_client, _mcp_tool_definitions
+    url   = config.get("mcp_server_url", "").strip()
+    token = config.get("mcp_bearer_token", "").strip()
+    _mcp_client = None
+    _mcp_tool_definitions = []
+    if not url:
+        return
+    try:
+        client = MCPClient(url, token)
+        if not client.initialize():
+            if not quiet:
+                console.print("[yellow]⚠ MCP: initialize failed — check URL and token[/yellow]")
+            return
+        tools = client.list_tools()
+        _mcp_client = client
+        _mcp_tool_definitions = mcp_tools_to_ollama(tools)
+        if not quiet:
+            console.print(f"[dim]MCP: {len(tools)} tool(s) loaded from {url}[/dim]")
+    except Exception as e:
+        if not quiet:
+            console.print(f"[yellow]⚠ MCP error: {e}[/yellow]")
 from tools.kali_tool import check_health as kali_health, run_tool as kali_run, format_result as kali_fmt, DESTRUCTIVE_TOOLS as KALI_DESTRUCTIVE
 
 
@@ -361,9 +392,17 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
             result = kali_run(kali_url, tool, params, timeout=config.get("kali_timeout", 300))
             return kali_fmt(tool, result)
 
+        elif name.startswith("mcp__"):
+            if _mcp_client is None:
+                return "Error: MCP server not connected. Use /mcp <url> to configure it."
+            mcp_name = name[5:]  # strip mcp__ prefix
+            return _mcp_client.call_tool(mcp_name, args)
+
         else:
             return f"Unknown tool: {name}"
 
+    except LoopAbortError:
+        raise  # let it propagate up to run_agentic_loop
     except KeyError as e:
         return f"Tool error: missing required argument {e}"
     except Exception as e:
@@ -479,7 +518,9 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
     payload = {
         "model": model,
         "messages": messages,
-        "tools": TOOL_DEFINITIONS + (KALI_TOOL_DEFINITIONS if config.get("kali_server_url") else []),
+        "tools": TOOL_DEFINITIONS
+            + (KALI_TOOL_DEFINITIONS if config.get("kali_server_url") else [])
+            + _mcp_tool_definitions,
         "stream": stream,
         "options": {
             "temperature": config.get("temperature", 0.1),
@@ -733,6 +774,9 @@ def show_help():
         "  /model <name>       — switch Ollama model directly\n"
         "  /searxng <url>      — set SearXNG URL (or /searxng to check, /searxng disable)\n"
         "  /kali <url>         — set Kali server URL (or /kali to check, /kali disable)\n"
+        "  /mcp <url>          — set MCP server URL (or /mcp to check, /mcp disable)\n"
+        "  /mcp token <value>  — set MCP bearer token\n"
+        "  /mcp tools          — list tools loaded from the MCP server\n"
         "  /think <on|off|default> — enable/disable model thinking mode (for Qwen3 etc.)\n"
         "  /set <key> <value>  — set a config value for this session and save (run /set to list all)\n"
         "  /exit               — quit and save session\n\n"
@@ -911,7 +955,8 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         return True, messages
 
     elif command == "/config":
-        console.print(Panel(json.dumps(config, indent=2), title="Config", border_style="dim"))
+        display = {k: ("***" if k == "mcp_bearer_token" and v else v) for k, v in config.items()}
+        console.print(Panel(json.dumps(display, indent=2), title="Config", border_style="dim"))
         return True, messages
 
     elif command == "/cwd":
@@ -1070,6 +1115,64 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print(f"SearXNG: [cyan]{searxng_url}[/cyan]  {status}")
             else:
                 console.print("[dim]SearXNG not configured. Usage: /searxng <url>[/dim]")
+        return True, messages
+
+    elif command == "/mcp":
+        parts2 = arg.strip().split(None, 1)
+        sub = parts2[0].lower() if parts2 else ""
+        if sub == "disable":
+            config.pop("mcp_server_url", None)
+            config.pop("mcp_bearer_token", None)
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            init_mcp(config, quiet=True)
+            console.print("[dim]MCP server removed from config.[/dim]")
+        elif sub == "token":
+            token_val = parts2[1].strip() if len(parts2) > 1 else ""
+            if not token_val:
+                console.print("[red]Usage: /mcp token <value>[/red]")
+            else:
+                config["mcp_bearer_token"] = token_val
+                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                console.print("[dim]MCP bearer token saved. Reconnecting...[/dim]")
+                init_mcp(config)
+        elif sub == "tools":
+            if _mcp_tool_definitions:
+                console.print(f"[bold]MCP tools ({len(_mcp_tool_definitions)}):[/bold]")
+                for t in _mcp_tool_definitions:
+                    fn = t["function"]
+                    desc = rich_escape(fn.get("description", "").replace("[MCP] ", "")[:80])
+                    console.print(f"  [cyan]{fn['name']}[/cyan]  [dim]{desc}[/dim]")
+            else:
+                console.print("[dim]No MCP tools loaded.[/dim]")
+        elif sub and not sub.startswith("http"):
+            console.print("[red]Unknown /mcp subcommand.[/red]  Usage: /mcp <url> | token <val> | tools | disable")
+        elif sub:
+            # /mcp <url>
+            url = parts2[0].strip()
+            token = config.get("mcp_bearer_token", "")
+            ok, msg = check_mcp_health(url, token)
+            if ok:
+                config["mcp_server_url"] = url
+                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                init_mcp(config, quiet=True)
+                console.print(f"[green]✓[/green]  MCP server set to {url} — {msg} — saved")
+            else:
+                console.print(f"[red]✗[/red]  Cannot connect to MCP server at {url}: {msg}")
+                console.print("[dim]  Fix the connection and try again, or set a token with /mcp token <value>[/dim]")
+        else:
+            # /mcp alone — show status
+            mcp_url = config.get("mcp_server_url", "")
+            token_set = bool(config.get("mcp_bearer_token", ""))
+            if mcp_url:
+                ok, msg = check_mcp_health(mcp_url, config.get("mcp_bearer_token", ""))
+                status = f"[green]✓  {msg}[/green]" if ok else f"[red]✗  {msg}[/red]"
+                token_status = "[green]set[/green]" if token_set else "[dim]not set[/dim]"
+                console.print(f"MCP server: [cyan]{mcp_url}[/cyan]  {status}  token: {token_status}")
+                if _mcp_tool_definitions:
+                    names = rich_escape(", ".join(t["function"]["name"] for t in _mcp_tool_definitions))
+                    console.print(f"  Tools loaded: {names}")
+            else:
+                console.print("[dim]MCP server not configured. Usage: /mcp <url>[/dim]")
         return True, messages
 
     elif command == "/think":
@@ -1317,6 +1420,19 @@ def do_doctor(config: dict):
     else:
         console.print("[dim]-[/dim]  Kali security scanning not configured (optional — /kali <url> to enable)")
 
+    # MCP server (optional)
+    mcp_url = config.get("mcp_server_url", "")
+    if mcp_url:
+        ok, msg = check_mcp_health(mcp_url, config.get("mcp_bearer_token", ""))
+        if ok:
+            console.print(f"[green]✓[/green]  MCP server reachable at {mcp_url} — {msg}")
+        else:
+            console.print(f"[red]✗[/red]  MCP server unreachable: {msg}")
+            console.print(f"     Fix: check server is running, or verify token with /mcp token <value>")
+            issues += 1
+    else:
+        console.print("[dim]-[/dim]  MCP server not configured (optional — /mcp <url> to enable)")
+
     # Config file
     if CONFIG_FILE.exists():
         console.print(f"[green]✓[/green]  Config: {CONFIG_FILE}")
@@ -1409,6 +1525,8 @@ _SLASH_COMMANDS = [
     ("/model <name>",      "switch Ollama model directly"),
     ("/searxng <url>",     "set SearXNG URL (or /searxng to check status, /searxng disable)"),
     ("/kali <url>",        "set Kali security server URL (or /kali to check status, /kali disable)"),
+    ("/mcp <url>",         "set MCP server URL (or /mcp to check, /mcp tools, /mcp disable)"),
+    ("/mcp token <value>", "set MCP bearer token and reconnect"),
     ("/think <on|off|default>", "enable/disable model thinking mode (Qwen3 etc.)"),
     ("/set <key> <value>", "set a config value and save (run /set alone to list all keys)"),
     ("/exit",              "quit and save session"),
@@ -1467,6 +1585,7 @@ def main():
     update_thread = _start_update_check()  # runs concurrently during startup
 
     detect_context_window(config)
+    init_mcp(config)
 
     system_prompt = build_system_prompt(config)
     messages = [{"role": "system", "content": system_prompt}]

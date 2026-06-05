@@ -17,6 +17,7 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - **Context management** — color-coded context usage (yellow at 70%, red at 90%); auto-compact at a configurable threshold to keep long sessions running smoothly
 - **Interactive model picker** — `/model` opens an arrow-key menu of available Ollama models; switch instantly without typing model names
 - **Live config tuning** — `/set` adjusts any numeric or boolean config value mid-session and persists it to `config.json`
+- **MCP server integration** — connect any [Model Context Protocol](https://modelcontextprotocol.io) server to extend the tool set with external capabilities
 
 ## Requirements
 
@@ -25,6 +26,7 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - A pulled Ollama model (see [Model Recommendations](#model-recommendations) below)
 - **SearXNG** *(optional)* — self-hosted search for `research <topic>` prompts
 - **mcp-kali-server** *(optional)* — self-hosted Kali Linux REST API for security scanning
+- **MCP server** *(optional)* — any HTTP-based Model Context Protocol server
 
 ## Quick Start
 
@@ -103,6 +105,8 @@ Switch models at any time with `/model` (interactive picker) or `/model llama3.1
 | `max_tool_result_chars` | `20000` | Truncate tool results longer than this before sending to the model |
 | `auto_compact_threshold` | `0.80` | Auto-compact when context fills to this fraction (set to `0` to disable) |
 | `think` | `null` | Model thinking mode: `true` to enable, `false` to disable, `null` to use model default (Qwen3, etc.) |
+| `mcp_server_url` | `""` | MCP server URL (leave empty to disable) |
+| `mcp_bearer_token` | `""` | Bearer token for MCP server authentication (shown as `***` in `/config`) |
 
 ## Usage
 
@@ -165,6 +169,11 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/kali <url>` | Set mcp-kali-server URL and save to config |
 | `/kali` | Show current Kali server URL and reachability status |
 | `/kali disable` | Remove Kali server from config |
+| `/mcp <url>` | Set MCP server URL, connect, and save to config |
+| `/mcp token <value>` | Set MCP bearer token and reconnect |
+| `/mcp tools` | List tools loaded from the MCP server |
+| `/mcp` | Show MCP server status and loaded tools |
+| `/mcp disable` | Remove MCP server from config |
 | `/think on` | Enable model thinking/reasoning mode |
 | `/think off` | Disable model thinking/reasoning mode |
 | `/think default` | Remove override — defer to model's built-in default |
@@ -285,6 +294,32 @@ The model maintains a persistent `memory/MEMORY.md` file across sessions. It rea
 ├── install.sh
 └── README.md
 ```
+
+## MCP Server Integration
+
+CLAWCLI supports connecting to any HTTP-based [Model Context Protocol](https://modelcontextprotocol.io) server. MCP servers expose additional tools that the model can call — databases, APIs, home automation, custom scripts, and more.
+
+### Setup
+
+```bash
+# Inside a clawcli session
+/mcp http://your-mcp-server:8000/mcp
+/mcp token your-bearer-token   # if authentication is required
+```
+
+Or during install (prompted automatically), or in `config.json`:
+```json
+"mcp_server_url": "http://your-mcp-server:8000/mcp",
+"mcp_bearer_token": "your-token"
+```
+
+The bearer token is stored in `config.json` (which is gitignored) and displayed as `***` in `/config` output.
+
+### How it works
+
+On startup, CLAWCLI connects to the MCP server, calls `tools/list`, and adds the server's tools to the model's available tool set. MCP tools are prefixed with `mcp__` internally so they're routed correctly. The model can then call them naturally alongside built-in tools.
+
+Use `/mcp tools` to see what tools are currently loaded, or `/doctor` to verify connectivity.
 
 ## Dependency Updates (Dependabot)
 
