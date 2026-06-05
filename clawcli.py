@@ -1708,7 +1708,7 @@ def main():
             messages = run_agentic_loop(user_input, messages, config)
             messages_holder[0] = messages
     except Exception as _exc:
-        console.print(f"[red]Unexpected error: {_exc}[/red]")
+        console.print(f"[red]Unexpected error: {rich_escape(str(_exc))}[/red]")
         try:
             save_session(session_id, messages_holder[0], os.getcwd())
             print_resume_hint(session_id)
