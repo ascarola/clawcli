@@ -155,8 +155,8 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/export [file]` | Save conversation to a Markdown file |
 | `/config` | Show current config |
 | `/cwd <path>` | Change working directory |
-| `/model list` | List available models on your Ollama server |
-| `/model <name>` | Switch Ollama model (context window auto-detected) |
+| `/model` | Interactive model picker — arrow keys to navigate, Enter to confirm |
+| `/model <name>` | Switch Ollama model directly (context window auto-detected) |
 | `/searxng <url>` | Set SearXNG URL and save to config |
 | `/searxng` | Show current SearXNG URL and reachability status |
 | `/searxng disable` | Remove SearXNG from config |

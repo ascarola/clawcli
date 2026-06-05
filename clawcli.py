@@ -34,6 +34,11 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.application import Application
+from prompt_toolkit.layout import Layout
+from prompt_toolkit.layout.containers import Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.widgets import Frame
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 CLAWCLI_DIR = Path(__file__).resolve().parent  # resolve symlink before .parent
@@ -712,8 +717,8 @@ def show_help():
         "  /export [file]      — save conversation to a Markdown file\n"
         "  /config             — show current config\n"
         "  /cwd <path>         — change working directory\n"
-        "  /model list         — list available Ollama models\n"
-        "  /model <name>       — switch Ollama model\n"
+        "  /model              — interactive model picker (↑↓ to navigate)\n"
+        "  /model <name>       — switch Ollama model directly\n"
         "  /searxng <url>      — set SearXNG URL (or /searxng to check, /searxng disable)\n"
         "  /kali <url>         — set Kali server URL (or /kali to check, /kali disable)\n"
         "  /think <on|off|default> — enable/disable model thinking mode (for Qwen3 etc.)\n"
@@ -781,6 +786,80 @@ def compact_messages(messages: list, config: dict) -> list:
     return new_messages
 
 
+def _model_switch(name: str, config: dict, messages: list) -> None:
+    config["model"] = name
+    detect_context_window(config)
+    CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+    for m in messages:
+        if m.get("role") == "system":
+            m["content"] = build_system_prompt(config)
+            break
+    console.print(f"[dim]Model switched to: {name}  (context: {config['context_window']:,}) — saved[/dim]")
+
+
+def _model_picker(models: list, current: str) -> str | None:
+    """Full-screen arrow-key model picker. Returns selected model name or None on cancel."""
+    idx = [0]
+    for i, m in enumerate(models):
+        if m["name"] == current:
+            idx[0] = i
+            break
+    result = [None]
+
+    def get_content():
+        lines = [("bold", " Switch Model\n\n")]
+        for i, m in enumerate(models):
+            name = m["name"]
+            size_gb = m["size"] / 1e9
+            params = m.get("details", {}).get("parameter_size", "")
+            quant  = m.get("details", {}).get("quantization_level", "")
+            info   = f"  [{params} {quant} {size_gb:.1f}GB]".replace("[  ", "[").strip()
+            active = "  ← active" if name == current else ""
+            if i == idx[0]:
+                lines.append(("class:sel", f"  ▶ {name}  {info}{active}\n"))
+            else:
+                lines.append(("class:dim", f"    {name}  {info}{active}\n"))
+        lines.append(("class:hint", "\n  ↑↓ navigate   Enter confirm   Escape cancel"
+                                    "   (list fetched live from Ollama)\n"))
+        return lines
+
+    kb = KeyBindings()
+
+    @kb.add("up")
+    def _(event):
+        idx[0] = (idx[0] - 1) % len(models)
+
+    @kb.add("down")
+    def _(event):
+        idx[0] = (idx[0] + 1) % len(models)
+
+    @kb.add("enter")
+    def _(event):
+        result[0] = models[idx[0]]["name"]
+        event.app.exit()
+
+    @kb.add("escape")
+    @kb.add("c-c")
+    def _(event):
+        event.app.exit()
+
+    picker_style = Style.from_dict({
+        "sel":  "bold reverse",
+        "dim":  "",
+        "hint": "italic ansigray",
+    })
+
+    app = Application(
+        layout=Layout(Frame(Window(FormattedTextControl(get_content, focusable=True)))),
+        key_bindings=kb,
+        style=picker_style,
+        full_screen=True,
+        mouse_support=False,
+    )
+    app.run()
+    return result[0]
+
+
 def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str = None) -> tuple[bool, list]:
     parts = cmd.strip().split(None, 1)
     command = parts[0].lower()
@@ -820,34 +899,24 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         return True, messages
 
     elif command == "/model":
-        if arg == "list":
+        if arg and arg != "list":
+            # Direct switch — /model <name>
+            _model_switch(arg, config, messages)
+        else:
+            # Interactive picker — /model or /model list
             ollama_url = config.get("ollama_url", "http://localhost:11434")
             try:
                 data = requests.get(f"{ollama_url}/api/tags", timeout=10).json()
                 models = data.get("models", [])
-                current = config.get("model")
-                console.print(f"\n[bold]Available models on {ollama_url}:[/bold]")
-                for m in models:
-                    name = m["name"]
-                    size_gb = m["size"] / 1e9
-                    params = m.get("details", {}).get("parameter_size", "")
-                    quant  = m.get("details", {}).get("quantization_level", "")
-                    marker = "[bold green] ◀ active[/bold green]" if name == current else ""
-                    console.print(f"  [cyan]{name}[/cyan]  [dim]{params} {quant} {size_gb:.1f}GB[/dim]{marker}")
+                if not models:
+                    console.print("[yellow]No models found on Ollama server.[/yellow]")
+                    return True, messages
+                current = config.get("model", "")
+                selected = _model_picker(models, current)
+                if selected:
+                    _model_switch(selected, config, messages)
             except Exception as e:
                 console.print(f"[red]Could not fetch models: {e}[/red]")
-        elif arg:
-            config["model"] = arg
-            detect_context_window(config)
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
-            # Rebuild system message so the model knows its own name
-            for m in messages:
-                if m.get("role") == "system":
-                    m["content"] = build_system_prompt(config)
-                    break
-            console.print(f"[dim]Model switched to: {arg}  (context: {config['context_window']:,}) — saved[/dim]")
-        else:
-            console.print(f"[dim]Current model: {config.get('model')}[/dim]")
         return True, messages
 
     elif command == "/update":
@@ -1258,8 +1327,8 @@ _SLASH_COMMANDS = [
     ("/export [file]",     "save conversation to a Markdown file"),
     ("/config",            "show current config"),
     ("/cwd <path>",        "change working directory"),
-    ("/model list",        "list available Ollama models"),
-    ("/model <name>",      "switch Ollama model"),
+    ("/model",             "interactive model picker (↑↓ arrow keys)"),
+    ("/model <name>",      "switch Ollama model directly"),
     ("/searxng <url>",     "set SearXNG URL (or /searxng to check status, /searxng disable)"),
     ("/kali <url>",        "set Kali security server URL (or /kali to check status, /kali disable)"),
     ("/think <on|off|default>", "enable/disable model thinking mode (Qwen3 etc.)"),
