@@ -166,6 +166,9 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/think on` | Enable model thinking/reasoning mode |
 | `/think off` | Disable model thinking/reasoning mode |
 | `/think default` | Remove override — defer to model's built-in default |
+| `/set` | List all tunable config keys and their current values |
+| `/set <key> <value>` | Set a config value for this session and persist to config.json |
+| `/set <key> default` | Reset a key to its default value |
 | `/exit` | Quit and save session |
 
 ## Multi-line Input

@@ -722,6 +722,7 @@ def show_help():
         "  /searxng <url>      — set SearXNG URL (or /searxng to check, /searxng disable)\n"
         "  /kali <url>         — set Kali server URL (or /kali to check, /kali disable)\n"
         "  /think <on|off|default> — enable/disable model thinking mode (for Qwen3 etc.)\n"
+        "  /set <key> <value>  — set a config value for this session and save (run /set to list all)\n"
         "  /exit               — quit and save session\n\n"
         "[bold]Special prompts:[/bold]\n"
         "  research <topic>  — search SearXNG then summarize\n\n"
@@ -784,6 +785,20 @@ def compact_messages(messages: list, config: dict) -> list:
     before = len(non_system)
     console.print(f"[dim]Compacted {before} messages → 2. Use /config to check context usage.[/dim]")
     return new_messages
+
+
+# Keys that /set is allowed to modify, with their type and description
+_SETTABLE_KEYS: dict[str, tuple[str, str]] = {
+    "max_tool_iterations":   ("int",   "Max agentic loop iterations per turn"),
+    "max_tool_result_chars": ("int",   "Truncate tool results at this many characters"),
+    "auto_compact_threshold":("float", "Auto-compact at this context fraction (0 to disable)"),
+    "temperature":           ("float", "Model temperature"),
+    "ollama_timeout":        ("int",   "Ollama HTTP timeout in seconds"),
+    "bash_max_timeout":      ("int",   "Max bash command timeout in seconds"),
+    "kali_timeout":          ("int",   "Kali server request timeout in seconds"),
+    "confirm_bash":          ("bool",  "Prompt before unapproved bash commands"),
+    "confirm_write":         ("bool",  "Prompt before writing files"),
+}
 
 
 def _model_switch(name: str, config: dict, messages: list) -> None:
@@ -1074,6 +1089,57 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         console.print(f"think = {status}")
         return True, messages
 
+    elif command == "/set":
+        parts2 = arg.strip().split(None, 1)
+        if not parts2 or not parts2[0]:
+            # Show all settable keys and current values
+            rows = []
+            for key, (typ, desc) in _SETTABLE_KEYS.items():
+                val = config.get(key, "[dim]unset[/dim]")
+                rows.append(f"  [cyan]{key}[/cyan] = [yellow]{val}[/yellow]  [dim]({typ}) {desc}[/dim]")
+            console.print("[bold]Settable config keys:[/bold]\n" + "\n".join(rows))
+            console.print("\n[dim]Usage: /set <key> <value>   or   /set <key> default[/dim]")
+            return True, messages
+        key = parts2[0].lower()
+        if key not in _SETTABLE_KEYS:
+            console.print(f"[red]Unknown key:[/red] '{key}'. Run [bold]/set[/bold] to see valid keys.")
+            return True, messages
+        typ, desc = _SETTABLE_KEYS[key]
+        raw = parts2[1].strip() if len(parts2) > 1 else ""
+        if not raw:
+            console.print(f"[dim]{key} = {config.get(key)}[/dim]")
+            return True, messages
+        if raw.lower() == "default":
+            # Load from defaults file
+            defaults_file = CLAWCLI_DIR / "config.defaults.json"
+            try:
+                defaults = json.loads(defaults_file.read_text())
+                config[key] = defaults[key]
+            except Exception:
+                console.print(f"[red]Could not read defaults for {key}[/red]")
+                return True, messages
+            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            console.print(f"[dim]{key} reset to default: {config[key]} — saved[/dim]")
+            return True, messages
+        try:
+            if typ == "int":
+                config[key] = int(raw)
+            elif typ == "float":
+                config[key] = float(raw)
+            elif typ == "bool":
+                if raw.lower() in ("true", "1", "yes", "on"):
+                    config[key] = True
+                elif raw.lower() in ("false", "0", "no", "off"):
+                    config[key] = False
+                else:
+                    raise ValueError
+        except ValueError:
+            console.print(f"[red]Invalid value:[/red] '{raw}' — expected {typ}")
+            return True, messages
+        CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+        console.print(f"[dim]{key} = {config[key]} — saved[/dim]")
+        return True, messages
+
     elif command in ("/exit", "/quit", "/q"):
         if session_id:
             save_session(session_id, messages, os.getcwd())
@@ -1332,6 +1398,7 @@ _SLASH_COMMANDS = [
     ("/searxng <url>",     "set SearXNG URL (or /searxng to check status, /searxng disable)"),
     ("/kali <url>",        "set Kali security server URL (or /kali to check status, /kali disable)"),
     ("/think <on|off|default>", "enable/disable model thinking mode (Qwen3 etc.)"),
+    ("/set <key> <value>", "set a config value and save (run /set alone to list all keys)"),
     ("/exit",              "quit and save session"),
 ]
 
