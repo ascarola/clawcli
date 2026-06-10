@@ -271,6 +271,15 @@ def build_system_prompt(config: dict) -> str:
         )
     else:
         base += "\n\nNote: Kali security scanning is not configured. Use /kali <url> to enable it."
+    if _mcp_tool_definitions:
+        base += (
+            f"\n\n## MCP Tools\n"
+            f"An MCP server is connected with {len(_mcp_tool_definitions)} tool(s) available. "
+            f"Use MCP tools only when the user explicitly requests an action or real-time data "
+            f"that requires them (e.g. send an email, check calendar, fetch live system stats). "
+            f"Do not use MCP tools to answer general, conversational, or knowledge-based questions "
+            f"you can answer directly."
+        )
     memory = load_memory()
     if memory.strip():
         mem_block = f"\n\n## Persistent Memory\n{memory}"
