@@ -275,10 +275,12 @@ def build_system_prompt(config: dict) -> str:
         base += (
             f"\n\n## MCP Tools\n"
             f"An MCP server is connected with {len(_mcp_tool_definitions)} tool(s) available. "
-            f"Use MCP tools only when the user explicitly requests an action or real-time data "
-            f"that requires them (e.g. send an email, check calendar, fetch live system stats). "
-            f"Do not use MCP tools to answer general, conversational, or knowledge-based questions "
-            f"you can answer directly."
+            f"**Only call an MCP tool when the user's request is explicitly an action or requires "
+            f"data that is impossible to answer without it** — for example: send an email, check "
+            f"a calendar, create a ticket, trigger a workflow. "
+            f"The ## Environment section above already contains this machine's hostname, OS, CPU, "
+            f"and RAM — never call a system-info MCP tool to answer questions about this machine. "
+            f"Never call an MCP tool speculatively or to refresh data you already have in context."
         )
     memory = load_memory()
     if memory.strip():
