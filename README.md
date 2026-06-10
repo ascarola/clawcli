@@ -107,6 +107,7 @@ Switch models at any time with `/model` (interactive picker) or `/model llama3.1
 | `think` | `null` | Model thinking mode: `true` to enable, `false` to disable, `null` to use model default (Qwen3, etc.) |
 | `mcp_server_url` | `""` | MCP server URL (leave empty to disable) |
 | `mcp_bearer_token` | `""` | Bearer token for MCP server authentication (shown as `***` in `/config`) |
+| `mcp_excluded_tools` | `[]` | List of MCP tool names to hide from the model (use `/mcp exclude`) |
 
 ## Usage
 
@@ -172,6 +173,8 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/mcp <url>` | Set MCP server URL, connect, and save to config |
 | `/mcp token <value>` | Set MCP bearer token and reconnect |
 | `/mcp tools` | List tools loaded from the MCP server |
+| `/mcp exclude <name>` | Hide a specific MCP tool from the model |
+| `/mcp include <name>` | Re-enable a previously excluded MCP tool |
 | `/mcp` | Show MCP server status and loaded tools |
 | `/mcp disable` | Remove MCP server from config |
 | `/think on` | Enable model thinking/reasoning mode |
@@ -320,6 +323,17 @@ The bearer token is stored in `config.json` (which is gitignored) and displayed 
 On startup, CLAWCLI connects to the MCP server, calls `tools/list`, and adds the server's tools to the model's available tool set. MCP tools are prefixed with `mcp__` internally so they're routed correctly. The model can then call them naturally alongside built-in tools.
 
 Use `/mcp tools` to see what tools are currently loaded, or `/doctor` to verify connectivity.
+
+### Excluding tools
+
+If a tool is too broadly applicable and gets called when you don't want it (e.g. a `system_get_system_info` tool being used for casual questions), you can hide it from the model without disabling the whole MCP server:
+
+```
+/mcp exclude mcp__system_get_system_info
+/mcp include mcp__system_get_system_info   # to re-enable
+```
+
+Exclusions are saved to `config.json` under `mcp_excluded_tools` and persist across sessions.
 
 ## Dependency Updates (Dependabot)
 
