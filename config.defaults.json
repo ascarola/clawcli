@@ -19,5 +19,6 @@
   "auto_compact_threshold": 0.80,
   "think": null,
   "mcp_server_url": "",
-  "mcp_bearer_token": ""
+  "mcp_bearer_token": "",
+  "mcp_excluded_tools": []
 }

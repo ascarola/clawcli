@@ -142,9 +142,13 @@ def init_mcp(config: dict, quiet: bool = False) -> None:
             return
         tools = client.list_tools()
         _mcp_client = client
-        _mcp_tool_definitions = mcp_tools_to_ollama(tools)
+        excluded = set(config.get("mcp_excluded_tools", []))
+        all_defs = mcp_tools_to_ollama(tools)
+        _mcp_tool_definitions = [t for t in all_defs if t["function"]["name"] not in excluded]
         if not quiet:
-            console.print(f"[dim]MCP: {len(tools)} tool(s) loaded from {url}[/dim]")
+            hidden = len(all_defs) - len(_mcp_tool_definitions)
+            suffix = f" ({hidden} excluded)" if hidden else ""
+            console.print(f"[dim]MCP: {len(_mcp_tool_definitions)} tool(s) loaded from {url}{suffix}[/dim]")
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]⚠ MCP error: {e}[/yellow]")
@@ -785,9 +789,11 @@ def show_help():
         "  /model <name>       — switch Ollama model directly\n"
         "  /searxng <url>      — set SearXNG URL (or /searxng to check, /searxng disable)\n"
         "  /kali <url>         — set Kali server URL (or /kali to check, /kali disable)\n"
-        "  /mcp <url>          — set MCP server URL (or /mcp to check, /mcp disable)\n"
-        "  /mcp token <value>  — set MCP bearer token\n"
-        "  /mcp tools          — list tools loaded from the MCP server\n"
+        "  /mcp <url>             — set MCP server URL (or /mcp to check, /mcp disable)\n"
+        "  /mcp token <value>     — set MCP bearer token\n"
+        "  /mcp tools             — list tools loaded from the MCP server\n"
+        "  /mcp exclude <name>    — hide a tool from the model\n"
+        "  /mcp include <name>    — re-enable a previously excluded tool\n"
         "  /think <on|off|default> — enable/disable model thinking mode (for Qwen3 etc.)\n"
         "  /set <key> <value>  — set a config value for this session and save (run /set to list all)\n"
         "  /exit               — quit and save session\n\n"
@@ -1147,16 +1153,43 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print("[dim]MCP bearer token saved. Reconnecting...[/dim]")
                 init_mcp(config)
         elif sub == "tools":
-            if _mcp_tool_definitions:
-                console.print(f"[bold]MCP tools ({len(_mcp_tool_definitions)}):[/bold]")
+            excluded = set(config.get("mcp_excluded_tools", []))
+            if _mcp_tool_definitions or excluded:
+                console.print(f"[bold]MCP tools ({len(_mcp_tool_definitions)} active):[/bold]")
                 for t in _mcp_tool_definitions:
                     fn = t["function"]
                     desc = rich_escape(fn.get("description", "").replace("[MCP] ", "")[:80])
                     console.print(f"  [cyan]{fn['name']}[/cyan]  [dim]{desc}[/dim]")
+                if excluded:
+                    console.print(f"  [dim]Excluded: {rich_escape(', '.join(sorted(excluded)))}[/dim]")
             else:
                 console.print("[dim]No MCP tools loaded.[/dim]")
+        elif sub == "exclude":
+            tool_name = parts2[1].strip() if len(parts2) > 1 else ""
+            if not tool_name:
+                console.print("[red]Usage: /mcp exclude <tool_name>[/red]")
+            else:
+                excluded = config.get("mcp_excluded_tools", [])
+                if tool_name not in excluded:
+                    excluded.append(tool_name)
+                    config["mcp_excluded_tools"] = excluded
+                    CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                    init_mcp(config, quiet=True)
+                console.print(f"[dim]MCP tool excluded: {tool_name}[/dim]")
+        elif sub == "include":
+            tool_name = parts2[1].strip() if len(parts2) > 1 else ""
+            if not tool_name:
+                console.print("[red]Usage: /mcp include <tool_name>[/red]")
+            else:
+                excluded = config.get("mcp_excluded_tools", [])
+                if tool_name in excluded:
+                    excluded.remove(tool_name)
+                    config["mcp_excluded_tools"] = excluded
+                    CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                    init_mcp(config, quiet=True)
+                console.print(f"[dim]MCP tool re-included: {tool_name}[/dim]")
         elif sub and not sub.startswith("http"):
-            console.print("[red]Unknown /mcp subcommand.[/red]  Usage: /mcp <url> | token <val> | tools | disable")
+            console.print("[red]Unknown /mcp subcommand.[/red]  Usage: /mcp <url> | token <val> | tools | exclude <name> | include <name> | disable")
         elif sub:
             # /mcp <url>
             url = parts2[0].strip()
@@ -1536,8 +1569,10 @@ _SLASH_COMMANDS = [
     ("/model <name>",      "switch Ollama model directly"),
     ("/searxng <url>",     "set SearXNG URL (or /searxng to check status, /searxng disable)"),
     ("/kali <url>",        "set Kali security server URL (or /kali to check status, /kali disable)"),
-    ("/mcp <url>",         "set MCP server URL (or /mcp to check, /mcp tools, /mcp disable)"),
-    ("/mcp token <value>", "set MCP bearer token and reconnect"),
+    ("/mcp <url>",            "set MCP server URL (or /mcp to check, /mcp tools, /mcp disable)"),
+    ("/mcp token <value>",   "set MCP bearer token and reconnect"),
+    ("/mcp exclude <name>",  "hide an MCP tool from the model"),
+    ("/mcp include <name>",  "re-enable a previously excluded MCP tool"),
     ("/think <on|off|default>", "enable/disable model thinking mode (Qwen3 etc.)"),
     ("/set <key> <value>", "set a config value and save (run /set alone to list all keys)"),
     ("/exit",              "quit and save session"),
