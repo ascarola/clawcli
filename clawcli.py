@@ -309,6 +309,18 @@ def confirm_bash(command: str, description: str) -> bool:
         return False
 
 
+def confirm_file_write(path: str, action: str) -> bool:
+    console.print(f"\n[yellow]File {action} requires confirmation:[/yellow]")
+    console.print(f"[white]  {path}[/white]")
+    try:
+        answer = input("  Allow? [y/N/a=abort] ").strip().lower()
+        if answer in ("a", "abort"):
+            raise LoopAbortError()
+        return answer in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
 def confirm_kali_destructive(tool: str, target: str) -> bool:
     console.print(
         f"\n[bold red]⚠ {tool.upper()} is a potentially destructive / high-noise tool.[/bold red]"
@@ -332,9 +344,13 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
             return read_file(args["file_path"], args.get("offset"), args.get("limit"))
 
         elif name == "write_file":
+            if config.get("confirm_write") and not confirm_file_write(args["file_path"], "write"):
+                return "File write denied by user."
             return write_file(args["file_path"], args["content"])
 
         elif name == "edit_file":
+            if config.get("confirm_write") and not confirm_file_write(args["file_path"], "edit"):
+                return "File edit denied by user."
             return edit_file(
                 args["file_path"],
                 args["old_string"],
@@ -343,6 +359,8 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
             )
 
         elif name == "replace_lines":
+            if config.get("confirm_write") and not confirm_file_write(args["file_path"], "edit"):
+                return "File edit denied by user."
             return replace_lines(
                 args["file_path"],
                 args["start_line"],
@@ -521,7 +539,7 @@ def render_tool_call(name: str, args: dict):
     console.print(f"\n[bold cyan]⚙ {name}[/bold cyan] ", end="")
     key_args = {k: v for k, v in args.items() if k not in ("content",)}
     if key_args:
-        parts = [f"[dim]{k}=[/dim][white]{str(v)[:200]}[/white]" for k, v in key_args.items()]
+        parts = [f"[dim]{k}=[/dim][white]{rich_escape(str(v)[:200])}[/white]" for k, v in key_args.items()]
         console.print(" ".join(parts))
     else:
         console.print()
@@ -540,9 +558,11 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
         "options": {
             "temperature": config.get("temperature", 0.1),
             "num_ctx": config.get("context_window", 8192),
-            **( {"think": config["think"]} if "think" in config and config["think"] is not None else {} ),
         },
     }
+    # 'think' is a top-level chat parameter in the Ollama API, not a model option
+    if config.get("think") is not None:
+        payload["think"] = config["think"]
     resp = requests.post(url, json=payload, stream=stream, timeout=config.get("ollama_timeout", 1800))
     resp.raise_for_status()
 
@@ -729,6 +749,12 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
                     for n, a in tool_infos
                 ]
         except LoopAbortError:
+            # Answer every pending tool call so the history has no dangling
+            # calls to confuse the model on the next turn
+            messages.extend(
+                {"role": "tool", "content": "Tool execution aborted by user.", "name": n}
+                for n, _ in tool_infos
+            )
             console.print("[yellow]Aborted — returning to prompt.[/yellow]")
             return messages
 
@@ -749,7 +775,7 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
                 result = result[:max_result_chars] + f"\n\n[... truncated — {len(result) - max_result_chars:,} chars omitted]"
 
             preview = result[:1000] + "…" if len(result) > 1000 else result
-            console.print(f"[dim]  → {preview}[/dim]")
+            console.print(f"[dim]  → {rich_escape(preview)}[/dim]")
 
             tool_results.append({"role": "tool", "content": result, "name": name})
 
@@ -963,7 +989,9 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         return True, messages
 
     elif command == "/clear":
+        system_msg = next((m for m in messages if m.get("role") == "system"), None)
         messages.clear()
+        messages.append(system_msg or {"role": "system", "content": build_system_prompt(config)})
         console.print("[dim]Conversation cleared.[/dim]")
         return True, messages
 
@@ -1381,7 +1409,7 @@ def list_sessions():
             sid = f.stem
             console.print(f"  [cyan]{sid}[/cyan]")
             console.print(f"  [dim]{saved_at}  {cwd}[/dim]")
-            console.print(f"  [white]{first}[/white]\n")
+            console.print(f"  [white]{rich_escape(first)}[/white]\n")
         except Exception:
             console.print(f"  [dim]{f.stem}[/dim] (unreadable)\n")
 
@@ -1680,7 +1708,7 @@ def main():
             if not content.strip():
                 continue
             if role == "user":
-                console.print(f"[bold cyan]You:[/bold cyan] {content.strip()}")
+                console.print(f"[bold cyan]You:[/bold cyan] {rich_escape(content.strip())}")
             elif role == "assistant":
                 console.print(Markdown(content.strip()))
             console.print()
@@ -1701,6 +1729,10 @@ def main():
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _sigterm_handler)
+    try:
+        signal.signal(signal.SIGHUP, _sigterm_handler)  # terminal closed
+    except (AttributeError, ValueError):
+        pass  # SIGHUP unavailable (Windows) or not in main thread
 
     kb = KeyBindings()
 
@@ -1753,6 +1785,10 @@ def main():
 
             messages = run_agentic_loop(user_input, messages, config)
             messages_holder[0] = messages
+            try:
+                save_session(session_id, messages, os.getcwd())  # autosave each turn
+            except OSError:
+                pass
     except Exception as _exc:
         console.print(f"[red]Unexpected error: {rich_escape(str(_exc))}[/red]")
         try:

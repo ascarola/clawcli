@@ -113,7 +113,7 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "The bash command to execute"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds (default 300, max 600). Increase for very long-running commands."},
+                    "timeout": {"type": "integer", "description": "Timeout in seconds (default 300, max 1800). Increase for very long-running commands."},
                     "description": {"type": "string", "description": "Brief description of what this command does"}
                 },
                 "required": ["command"]

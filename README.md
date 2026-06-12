@@ -8,7 +8,7 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - **Streaming Markdown** — responses render live with a spinner while the model thinks
 - **Slash command autocomplete** — type `/` to see all commands with descriptions
 - **Persistent memory** — the model writes facts about you and your projects across sessions
-- **Session save/resume** — pick up where you left off
+- **Session save/resume** — autosaved after every turn (survives crashes and closed terminals); pick up where you left off with `--continue`
 - **Update checking** — notified on startup when a newer version is available; update in-session with `/update`
 - **Bot-resistant web fetch** — uses Chrome TLS impersonation via `curl_cffi` to bypass Cloudflare and common bot-detection
 - **SearXNG integration** — optional web research via your own SearXNG instance
@@ -210,6 +210,10 @@ CLAWCLI can run bash commands on your machine. Two files control what's allowed:
 **`allowed_commands.txt`** — command prefixes that run without confirmation. Empty by default.
 
 Set `"confirm_bash": true` in `config.json` to require approval for any command not in `allowed_commands.txt`.
+
+The allowlist only applies to simple commands: anything containing shell chaining or redirection (`;`, `&&`, `|`, `>`, backticks, `$(...)`) or referencing credential stores (`~/.ssh`, `~/.secrets`, `.pem`/`.key`/`.env` files, etc.) always requires confirmation, even when it starts with an allowlisted prefix.
+
+Set `"confirm_write": true` to also require approval before the model writes or edits any file.
 
 Every bash command executed is logged to `audit.log` with timestamp and exit code.
 

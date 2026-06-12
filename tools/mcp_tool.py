@@ -67,13 +67,16 @@ class MCPClient:
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "clawcli", "version": "1.2.0"},
+                    "clientInfo": {"name": "clawcli", "version": "1.3.0"},
                 },
             }
             resp = requests.post(
                 self.url, json=payload, headers=self._headers(), timeout=self.timeout
             )
             resp.raise_for_status()
+            ct = resp.headers.get("content-type", "")
+            if "json" in ct and "error" in resp.json():
+                return False  # HTTP 200 but JSON-RPC error (bad token, etc.)
             self.session_id = resp.headers.get("Mcp-Session-Id")
             # Send initialized notification (fire-and-forget, some servers require it)
             try:
