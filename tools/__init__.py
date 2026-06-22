@@ -153,6 +153,21 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "read_image",
+            "description": "Read a local image file using a vision model. Use for OCR (extracting text from images), describing screenshots, diagrams, photos, or any visual content. Supports PNG, JPG, GIF, WebP, BMP.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Path to the image file (absolute or relative)"},
+                    "prompt": {"type": "string", "description": "What to ask about the image (e.g. 'Extract all text', 'Describe this diagram', 'What does this screenshot show?'). Default: describe the image."}
+                },
+                "required": ["file_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "save_memory",
             "description": "Save an important fact, preference, or context to persistent memory for future sessions.",
             "parameters": {

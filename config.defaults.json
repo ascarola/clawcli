@@ -20,5 +20,6 @@
   "think": null,
   "mcp_server_url": "",
   "mcp_bearer_token": "",
-  "mcp_excluded_tools": []
+  "mcp_excluded_tools": [],
+  "vision_model": ""
 }

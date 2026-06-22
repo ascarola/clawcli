@@ -119,6 +119,7 @@ from tools.file_tools import read_file, write_file, edit_file, replace_lines, gl
 from tools.bash_tool import execute_bash
 from tools.search_tool import web_search, web_fetch
 from tools.mcp_tool import MCPClient, mcp_tools_to_ollama, check_mcp_health
+from tools.image_tool import read_image
 
 # ── MCP state ────────────────────────────────────────────────────────────────
 _mcp_client: MCPClient | None = None
@@ -424,6 +425,18 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
 
             result = kali_run(kali_url, tool, params, timeout=config.get("kali_timeout", 300))
             return kali_fmt(tool, result)
+
+        elif name == "read_image":
+            vision_model = config.get("vision_model") or config.get("model", "")
+            if not vision_model:
+                return "Error: no vision_model configured."
+            return read_image(
+                args["file_path"],
+                prompt=args.get("prompt", "Describe this image in detail."),
+                vision_model=vision_model,
+                ollama_url=ollama_url,
+                timeout=config.get("ollama_timeout", 120),
+            )
 
         elif name.startswith("mcp__"):
             if _mcp_client is None:
@@ -897,6 +910,7 @@ _SETTABLE_KEYS: dict[str, tuple[str, str]] = {
     "kali_timeout":          ("int",   "Kali server request timeout in seconds"),
     "confirm_bash":          ("bool",  "Prompt before unapproved bash commands"),
     "confirm_write":         ("bool",  "Prompt before writing files"),
+    "vision_model":          ("str",   "Ollama model to use for read_image (defaults to active model)"),
 }
 
 
