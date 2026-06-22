@@ -17,7 +17,7 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - **Context management** — color-coded context usage (yellow at 70%, red at 90%); auto-compact at a configurable threshold to keep long sessions running smoothly
 - **Interactive model picker** — `/model` opens an arrow-key menu of available Ollama models; switch instantly without typing model names
 - **Live config tuning** — `/set` adjusts any numeric or boolean config value mid-session and persists it to `config.json`
-- **Vision and OCR** — describe images, extract text, and analyze screenshots using a vision-capable Ollama model (PNG, JPG, GIF, WebP, BMP)
+- **Vision, OCR, and PDF** — describe images, extract text, and read PDFs (native or scanned) using a vision-capable Ollama model; supports PNG, JPG, GIF, WebP, BMP, TIFF, and PDF
 - **MCP server integration** — connect any [Model Context Protocol](https://modelcontextprotocol.io) server to extend the tool set with external capabilities
 
 ## Requirements
@@ -306,21 +306,34 @@ The model maintains a persistent `memory/MEMORY.md` file across sessions. It rea
 └── README.md
 ```
 
-## Vision and OCR
+## Vision, OCR, and PDF
 
-CLAWCLI can read images using any vision-capable Ollama model. Just reference an image in your prompt — the model will call `read_image` automatically.
+CLAWCLI can read images and PDFs using any vision-capable Ollama model. Just reference a file in your prompt — the model picks the right tool automatically.
 
 ```
 what does this screenshot show? /path/to/screenshot.png
 extract all text from /path/to/scan.jpg
 describe the diagram at ~/Downloads/architecture.png
+summarize this PDF: ~/Documents/report.pdf
+extract text from this scanned contract: ~/Downloads/contract.pdf
 ```
 
-Supported formats: PNG, JPG/JPEG, GIF, WebP, BMP (up to 20 MB).
+### Supported formats
+
+| Type | Formats | Limit |
+|------|---------|-------|
+| Images | PNG, JPG/JPEG, GIF, WebP, BMP, TIFF | 20 MB |
+| PDF | Native text, scanned/image-only, or mixed | 100 MB, up to 100 pages (20 OCR pages) |
+
+### How PDF reading works
+
+- **Native text PDF** — text is extracted directly via [PyMuPDF](https://pymupdf.readthedocs.io/). Fast, no vision model needed.
+- **Scanned PDF** — each page is rendered as an image and sent to the vision model for OCR.
+- **Mixed PDF** — each page is handled by the best method automatically. Pages with enough native text are read directly; image-only pages are OCR'd.
 
 ### Setup
 
-If your active model already supports vision (e.g. `gemma4`, `llava`, `minicpm-v`), no configuration is needed. If it doesn't, set a dedicated vision model:
+If your active model already supports vision (e.g. `gemma4`, `llava`, `minicpm-v`), no configuration is needed for images or scanned PDFs. If it doesn't, set a dedicated vision model:
 
 ```bash
 # Pull a vision model
@@ -330,7 +343,7 @@ ollama pull llava
 /set vision_model llava:latest
 ```
 
-If `vision_model` is not set, `read_image` uses whatever model is currently active. If that model doesn't support images, you'll get a clear error with instructions rather than a silent failure.
+If `vision_model` is not set, vision tools use whatever model is currently active. If that model doesn't support images, you'll get a clear error with instructions rather than a silent failure. Native text PDFs always work regardless of vision model.
 
 ### Model suggestions
 

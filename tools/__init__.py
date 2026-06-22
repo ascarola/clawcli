@@ -154,12 +154,27 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "read_image",
-            "description": "Read a local image file using a vision model. Use for OCR (extracting text from images), describing screenshots, diagrams, photos, or any visual content. Supports PNG, JPG, GIF, WebP, BMP.",
+            "description": "Read a local image file using a vision model. Use for OCR (extracting text from images), describing screenshots, diagrams, photos, or any visual content. Supports PNG, JPG, GIF, WebP, BMP, TIFF.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string", "description": "Path to the image file (absolute or relative)"},
                     "prompt": {"type": "string", "description": "What to ask about the image (e.g. 'Extract all text', 'Describe this diagram', 'What does this screenshot show?'). Default: describe the image."}
+                },
+                "required": ["file_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_pdf",
+            "description": "Extract text from a PDF file. Native text PDFs are read directly (fast, no vision model needed). Scanned/image-only PDFs are OCR'd page by page using the vision model. Mixed PDFs are handled automatically — each page is processed by the best method. Use this for any .pdf file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Path to the PDF file (absolute or relative)"},
+                    "prompt": {"type": "string", "description": "Instruction for scanned pages sent to the vision model (e.g. 'Extract all text', 'Summarize this page'). Only used for image-only pages. Default: extract all text."}
                 },
                 "required": ["file_path"]
             }

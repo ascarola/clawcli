@@ -119,7 +119,7 @@ from tools.file_tools import read_file, write_file, edit_file, replace_lines, gl
 from tools.bash_tool import execute_bash
 from tools.search_tool import web_search, web_fetch
 from tools.mcp_tool import MCPClient, mcp_tools_to_ollama, check_mcp_health
-from tools.image_tool import read_image
+from tools.image_tool import read_image, read_pdf
 
 # ── MCP state ────────────────────────────────────────────────────────────────
 _mcp_client: MCPClient | None = None
@@ -433,6 +433,16 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
             return read_image(
                 args["file_path"],
                 prompt=args.get("prompt", "Describe this image in detail."),
+                vision_model=vision_model,
+                ollama_url=ollama_url,
+                timeout=config.get("ollama_timeout", 120),
+            )
+
+        elif name == "read_pdf":
+            vision_model = config.get("vision_model") or config.get("model", "")
+            return read_pdf(
+                args["file_path"],
+                prompt=args.get("prompt", "Extract all text from this page."),
                 vision_model=vision_model,
                 ollama_url=ollama_url,
                 timeout=config.get("ollama_timeout", 120),
