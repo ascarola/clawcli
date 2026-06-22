@@ -67,7 +67,7 @@ class MCPClient:
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "clawcli", "version": "1.3.0"},
+                    "clientInfo": {"name": "clawcli", "version": "1.4.0"},
                 },
             }
             resp = requests.post(

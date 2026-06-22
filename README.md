@@ -17,6 +17,7 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - **Context management** — color-coded context usage (yellow at 70%, red at 90%); auto-compact at a configurable threshold to keep long sessions running smoothly
 - **Interactive model picker** — `/model` opens an arrow-key menu of available Ollama models; switch instantly without typing model names
 - **Live config tuning** — `/set` adjusts any numeric or boolean config value mid-session and persists it to `config.json`
+- **Vision and OCR** — describe images, extract text, and analyze screenshots using a vision-capable Ollama model (PNG, JPG, GIF, WebP, BMP)
 - **MCP server integration** — connect any [Model Context Protocol](https://modelcontextprotocol.io) server to extend the tool set with external capabilities
 
 ## Requirements
@@ -27,6 +28,7 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - **SearXNG** *(optional)* — self-hosted search for `research <topic>` prompts
 - **mcp-kali-server** *(optional)* — self-hosted Kali Linux REST API for security scanning
 - **MCP server** *(optional)* — any HTTP-based Model Context Protocol server
+- **Vision-capable Ollama model** *(optional)* — for image reading/OCR (e.g. `gemma4`, `llava`, `minicpm-v`)
 
 ## Quick Start
 
@@ -108,6 +110,7 @@ Switch models at any time with `/model` (interactive picker) or `/model llama3.1
 | `mcp_server_url` | `""` | MCP server URL (leave empty to disable) |
 | `mcp_bearer_token` | `""` | Bearer token for MCP server authentication (shown as `***` in `/config`) |
 | `mcp_excluded_tools` | `[]` | List of MCP tool names to hide from the model (use `/mcp exclude`) |
+| `vision_model` | `""` | Ollama model to use for `read_image` — defaults to the active model if empty |
 
 ## Usage
 
@@ -296,11 +299,47 @@ The model maintains a persistent `memory/MEMORY.md` file across sessions. It rea
 │   ├── file_tools.py       # File read/write/edit/glob/grep
 │   ├── bash_tool.py        # Bash execution with allow/deny enforcement
 │   ├── search_tool.py      # SearXNG search + web fetch
+│   ├── image_tool.py       # Vision/OCR via Ollama multimodal models
 │   └── kali_tool.py        # mcp-kali-server integration
 ├── requirements.txt
 ├── install.sh
 └── README.md
 ```
+
+## Vision and OCR
+
+CLAWCLI can read images using any vision-capable Ollama model. Just reference an image in your prompt — the model will call `read_image` automatically.
+
+```
+what does this screenshot show? /path/to/screenshot.png
+extract all text from /path/to/scan.jpg
+describe the diagram at ~/Downloads/architecture.png
+```
+
+Supported formats: PNG, JPG/JPEG, GIF, WebP, BMP (up to 20 MB).
+
+### Setup
+
+If your active model already supports vision (e.g. `gemma4`, `llava`, `minicpm-v`), no configuration is needed. If it doesn't, set a dedicated vision model:
+
+```bash
+# Pull a vision model
+ollama pull llava
+
+# Set it in config (persists across sessions)
+/set vision_model llava:latest
+```
+
+If `vision_model` is not set, `read_image` uses whatever model is currently active. If that model doesn't support images, you'll get a clear error with instructions rather than a silent failure.
+
+### Model suggestions
+
+| Model | Size | Notes |
+|-------|------|-------|
+| `gemma4:26b` | ~16 GB | Best quality; supports vision natively |
+| `llava:7b` | ~4.7 GB | Good general-purpose vision model |
+| `moondream:latest` | ~1.7 GB | Lightweight; fast on CPU |
+| `minicpm-v:latest` | ~5.5 GB | Strong OCR and document reading |
 
 ## MCP Server Integration
 
