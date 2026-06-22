@@ -51,6 +51,12 @@ def read_image(
             json=payload,
             timeout=timeout,
         )
+        if resp.status_code == 400 and "multimodal" in resp.text.lower():
+            return (
+                f"Error: '{vision_model}' does not support vision/images. "
+                f"Pull a vision-capable model (e.g. `ollama pull llava`) "
+                f"and set it with `/set vision_model llava:latest`."
+            )
         resp.raise_for_status()
         data = resp.json()
         content = data.get("message", {}).get("content", "")
@@ -59,5 +65,7 @@ def read_image(
         return f"Error: could not connect to Ollama at {ollama_url}"
     except requests.exceptions.Timeout:
         return f"Error: vision model timed out after {timeout}s"
+    except requests.exceptions.HTTPError as e:
+        return f"Error: Ollama returned {resp.status_code}: {resp.text[:200]}"
     except Exception as e:
         return f"Error: {e}"
