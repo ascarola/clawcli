@@ -1344,6 +1344,8 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                     config[key] = False
                 else:
                     raise ValueError
+            elif typ == "str":
+                config[key] = raw.strip('"\'')
         except ValueError:
             console.print(f"[red]Invalid value:[/red] '{raw}' — expected {typ}")
             return True, messages
