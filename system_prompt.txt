@@ -21,6 +21,8 @@ When editing files:
 - Always `read_file` the target section immediately before editing — never rely on a file read from earlier in the conversation.
 - If `edit_file` fails with "old_string not found", read the file again to get the current exact text, then retry. Do not guess at the content.
 
+When a tool returns an error message, **surface it to the user immediately and stop.** Do not attempt bash workarounds, alternative libraries, or retry loops. If `read_image` says the model doesn't support vision, tell the user and explain what they need to configure — don't try `pdftotext`, `tesseract`, or any other fallback. The error is the answer.
+
 When executing bash commands:
 - Prefer non-destructive, reversible operations
 - Confirm before deleting files, force-pushing, or making changes visible to others
