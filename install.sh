@@ -169,6 +169,17 @@ except Exception:
         fi
     fi
 
+    # Vision model (optional)
+    if [ -z "$VISION_MODEL" ]; then
+        VISION_MODEL=""
+        if [ "$IS_INTERACTIVE" -eq 1 ]; then
+            echo ""
+            echo "  Vision model (optional) — used for read_image, OCR, and scanned PDF reading."
+            echo "  If your active model supports vision (e.g. gemma4, llava, minicpm-v), leave blank."
+            VISION_MODEL=$(ask "  Vision model (blank to use active model)" "")
+        fi
+    fi
+
     # SearXNG (optional)
     if [ -z "$SEARXNG_URL" ]; then
         SEARXNG_URL=""
@@ -223,6 +234,7 @@ except Exception:
     echo "  Settings:"
     echo "    Ollama URL:       $OLLAMA_URL"
     echo "    Model:            $OLLAMA_MODEL"
+    echo "    Vision model:     ${VISION_MODEL:-same as active model}"
     echo "    SearXNG:          ${SEARXNG_URL:-not configured}"
     echo "    Kali server:      ${KALI_SERVER_URL:-not configured}"
     echo "    MCP server:       ${MCP_SERVER_URL:-not configured}"
@@ -231,13 +243,14 @@ except Exception:
     echo "    Your name:        ${USER_NAME:-not set}"
     echo ""
 
-    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$SEARXNG_URL" "$KALI_SERVER_URL" "$MCP_SERVER_URL" "$MCP_BEARER_TOKEN" "$ASSISTANT_NAME" "$USER_NAME" <<'PYEOF'
+    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$VISION_MODEL" "$SEARXNG_URL" "$KALI_SERVER_URL" "$MCP_SERVER_URL" "$MCP_BEARER_TOKEN" "$ASSISTANT_NAME" "$USER_NAME" <<'PYEOF'
 import sys, json
-defaults_path, out_path, ollama_url, model, searxng_url, kali_server_url, mcp_server_url, mcp_bearer_token, assistant_name, user_name = sys.argv[1:]
+defaults_path, out_path, ollama_url, model, vision_model, searxng_url, kali_server_url, mcp_server_url, mcp_bearer_token, assistant_name, user_name = sys.argv[1:]
 with open(defaults_path) as f:
     cfg = json.load(f)
 cfg["ollama_url"]        = ollama_url
 cfg["model"]             = model
+cfg["vision_model"]      = vision_model
 cfg["searxng_url"]       = searxng_url
 cfg["kali_server_url"]   = kali_server_url
 cfg["mcp_server_url"]    = mcp_server_url

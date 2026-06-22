@@ -1465,6 +1465,15 @@ def do_doctor(config: dict):
         console.print("     Fix: pip install curl_cffi")
         issues += 1
 
+    # pymupdf
+    try:
+        import fitz as _fitz
+        console.print(f"[green]✓[/green]  pymupdf {_fitz.__version__} (PDF reading enabled)")
+    except ImportError:
+        console.print("[yellow]![/yellow]  pymupdf not installed — read_pdf unavailable")
+        console.print("     Fix: pip install pymupdf")
+        issues += 1
+
     # Ollama
     ollama_url = config.get("ollama_url", "http://localhost:11434")
     model      = config.get("model", "")
@@ -1485,6 +1494,23 @@ def do_doctor(config: dict):
         console.print(f"[red]✗[/red]  Cannot reach Ollama at {ollama_url}")
         console.print(f"     {e}")
         issues += 1
+
+    # vision model (optional)
+    vision_model = config.get("vision_model", "")
+    if vision_model:
+        try:
+            resp2 = requests.get(f"{ollama_url}/api/tags", timeout=5)
+            vmodels = [m["name"] for m in resp2.json().get("models", [])]
+            if vision_model in vmodels:
+                console.print(f"[green]✓[/green]  Vision model '{vision_model}' available")
+            else:
+                console.print(f"[yellow]![/yellow]  Vision model '{vision_model}' not found on Ollama server")
+                console.print(f"     Fix: ollama pull {vision_model}")
+                issues += 1
+        except Exception:
+            pass  # Ollama already flagged as unreachable above
+    else:
+        console.print(f"[dim]-[/dim]  vision_model not set — read_image/read_pdf will use active model (optional — /set vision_model <name>)")
 
     # SearXNG (optional)
     searxng_url = config.get("searxng_url", "")
