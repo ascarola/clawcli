@@ -97,6 +97,37 @@ OLLAMA_MODEL=gemma4:26b \
 bash <(curl -fsSL https://raw.githubusercontent.com/ascarola/clawcli/main/install.sh)
 ```
 
+### Virtualenv vs system Python
+
+`install.sh` creates a virtualenv at `~/clawcli/.venv` and symlinks a small
+launcher onto your `PATH`, so `clawcli` runs from that venv wherever you invoke
+it. Keep it that way if you can.
+
+If you instead symlink `clawcli.py` directly, it runs on system Python, and on
+Debian/Ubuntu `clawcli update` will **fail silently**: `requests` is installed
+by apt, pip refuses to replace a distro-managed package, and the whole
+`pip install -r requirements.txt` aborts before installing anything — so
+updates report success while changing nothing. To check which you have:
+
+```bash
+readlink "$(command -v clawcli)"     # should end in /clawcli, not /clawcli.py
+```
+
+To migrate an existing system-Python install:
+
+```bash
+cd ~/clawcli
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+printf '#!/bin/bash\nexec "%s/.venv/bin/python3" "%s/clawcli.py" "$@"\n' "$PWD" "$PWD" > clawcli
+chmod +x clawcli
+sudo ln -sf "$PWD/clawcli" /usr/local/bin/clawcli
+```
+
+Your working directory, arguments and config are unaffected — only the set of
+installed packages changes. Reverting is one command: point the symlink back at
+`clawcli.py`.
+
 ### Uninstall
 
 ```bash

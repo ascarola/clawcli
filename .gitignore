@@ -14,6 +14,10 @@ venv/
 .venv/
 env/
 
+# Launcher wrapper written by install.sh — hardcodes this machine's
+# absolute paths, so it must never be committed
+/clawcli
+
 # Machine-specific config (generated from config.defaults.json by install.sh)
 config.json
 
