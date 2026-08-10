@@ -1760,15 +1760,34 @@ def do_update():
             capture_output=True, text=True,
         )
         if pip.returncode != 0:
-            # Filter out noise from system-installed packages pip can't manage
+            # A distro-managed dependency (e.g. Debian's python3-requests) cannot
+            # be replaced by pip, and pip aborts the *entire* install rather than
+            # skipping it — so every other dependency silently stays stale.
+            # This used to be filtered away as noise, which reported success on a
+            # total failure. Always surface a failed update.
+            _DISTRO_MARKERS = (
+                "uninstall-no-record-file", "Cannot uninstall",
+                "no RECORD file", "installed by debian",
+            )
+            distro_conflict = any(m in pip.stderr for m in _DISTRO_MARKERS)
             real_errors = "\n".join(
                 l for l in pip.stderr.splitlines()
-                if "uninstall-no-record-file" not in l and "Cannot uninstall" not in l
-                and "no RECORD file" not in l and "installed by debian" not in l
-                and "installed by" not in l.lower() and l.strip()
+                if l.strip() and not any(m in l for m in _DISTRO_MARKERS)
+                and "installed by" not in l.lower()
             ).strip()
+
+            console.print("[red]Dependency update failed — code was updated, packages were not.[/red]")
+            if distro_conflict:
+                console.print(
+                    "[dim]  A dependency is managed by your system package manager, so pip\n"
+                    "  could not upgrade it, and pip aborted the whole install.\n"
+                    "  Fix: reinstall into a virtualenv (see 'Virtualenv vs system Python'\n"
+                    "  in the README), or upgrade that package via your distro.[/dim]"
+                )
             if real_errors:
-                console.print(f"[yellow]pip warning:[/yellow] {real_errors}")
+                console.print(f"[yellow]pip error:[/yellow] {rich_escape(real_errors[:800])}")
+            return
+
     console.print("[green]Up to date.[/green]")
 
 
