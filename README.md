@@ -296,11 +296,21 @@ CLAWCLI can run bash commands on your machine. Two files control what's allowed:
 
 **`denied_commands.txt`** — patterns that are always blocked (e.g. `rm -rf /`, `reboot`). Edit to add your own.
 
-**`allowed_commands.txt`** — command prefixes that run without confirmation. Empty by default.
+**`allowed_commands.txt`** — command prefixes that run without confirmation. Ships with a read-only default set (`ls`, `cat`, `git status`, `grep`, `find`, …). Edit to suit.
 
 Set `"confirm_bash": true` in `config.json` to require approval for any command not in `allowed_commands.txt`.
 
-The allowlist only applies to simple commands: anything containing shell chaining or redirection (`;`, `&&`, `|`, `>`, backticks, `$(...)`) or referencing credential stores (`~/.ssh`, `~/.secrets`, `.pem`/`.key`/`.env` files, etc.) always requires confirmation, even when it starts with an allowlisted prefix.
+The allowlist only applies to simple, read-only commands. Confirmation is still required — even for an allowlisted prefix — when a command contains:
+
+- **shell chaining or redirection** — `;`, `&&`, `|`, `<`, `>`, backticks, `$(...)`
+- **credential paths** — `~/.ssh`, `~/.secrets`, `~/.aws`, `.pem`/`.key`/`.env` files, `/etc/shadow`, etc.
+- **an argument that turns a read-only tool into a writing or executing one** — `find -exec`/`-delete`/`-ok`/`-fls`, `sort -o`, `sed -i`
+
+Tools that exist to run other commands are not allowlisted at all, because no
+argument-level check can make them safe: `awk` (`BEGIN{system(...)}`), `xargs`,
+`sed` (in-place edits, GNU `e` command), and the network mutators `ip` and
+`ifconfig`. Add them back only if you understand that an allowlisted `awk` is
+equivalent to an allowlisted shell.
 
 Set `"confirm_write": true` to also require approval before the model writes or edits any file.
 

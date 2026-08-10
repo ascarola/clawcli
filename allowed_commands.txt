@@ -1,7 +1,19 @@
 # Bash commands that run without confirmation (one pattern per line, supports prefix matching)
 # Lines starting with # are comments
+#
 # Note: execution-capable tools (python3, curl, pip, wget, etc.) are intentionally excluded
 # so they require confirmation when confirm_bash=true.
+#
+# Deliberately NOT listed, because they run arbitrary commands or reconfigure
+# the host regardless of how harmless the invocation looks:
+#   awk      — awk 'BEGIN{system("...")}' executes anything
+#   xargs    — its entire purpose is executing another command
+#   sed      — sed -i rewrites files in place; GNU sed's `e` command executes
+#   ip       — ip link/addr/route mutate networking
+#   ifconfig — same
+# find and sort remain listed but their command-running and file-writing
+# argument forms (-exec, -delete, -o, ...) still require confirmation; see
+# _ARG_GUARDS in tools/bash_tool.py.
 ls
 pwd
 cat
@@ -30,20 +42,15 @@ find
 grep
 rg
 fd
-awk
-sed
 sort
 uniq
 wc
 tr
 cut
-xargs
 jq
 ping
 netstat
 ss
-ip
-ifconfig
 systemctl status
 journalctl
 docker ps
