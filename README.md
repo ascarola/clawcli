@@ -1,10 +1,13 @@
 # CLAWCLI 🦞
 
-A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com). No cloud APIs, no subscriptions, no API keys — your machine, your data.
+A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com). Point it at your own machine and nothing leaves it — no cloud APIs, no subscriptions, no API keys.
+
+Need more reach? It also speaks the OpenAI chat-completions API, so the same agent can run against a gateway (LiteLLM, vLLM, LocalAI, or your own) without giving up the local default. See [Connecting to a gateway](#connecting-to-an-openai-compatible-gateway).
 
 ## Features
 
 - **Agentic tool loop** — reads/writes/edits files, runs bash commands, searches the web, globs and greps the filesystem
+- **Two backends, one agent** — talks native Ollama by default, or any OpenAI-compatible endpoint with bearer-token auth; auto-detected from the URL
 - **Streaming Markdown** — responses render live with a spinner while the model thinks
 - **Slash command autocomplete** — type `/` to see all commands with descriptions
 - **Persistent memory** — the model writes facts about you and your projects across sessions
@@ -13,22 +16,50 @@ A local-first AI agent for the terminal, powered by [Ollama](https://ollama.com)
 - **Bot-resistant web fetch** — uses Chrome TLS impersonation via `curl_cffi` to bypass Cloudflare and common bot-detection
 - **SearXNG integration** — optional web research via your own SearXNG instance
 - **Kali security scanning** — optional integration with [mcp-kali-server](https://github.com/Wh0am123/MCP-Kali-Server) to run nmap, nikto, gobuster, hydra, sqlmap, metasploit, and more via natural language
-- **Safety controls** — configurable allow/deny lists for bash commands; destructive security tools require explicit confirmation; audit log of every command run
+- **Safety controls** — allow/deny lists for bash commands that gate on arguments as well as command names; destructive security tools require explicit confirmation; audit log of every command run
+- **SSRF-resistant fetching** — every redirect hop is re-resolved and re-checked, so a public URL cannot bounce the agent onto your private network
 - **Context management** — color-coded context usage (yellow at 70%, red at 90%); auto-compact at a configurable threshold to keep long sessions running smoothly
-- **Interactive model picker** — `/model` opens an arrow-key menu of available Ollama models; switch instantly without typing model names
+- **Interactive model picker** — `/model` opens an arrow-key menu of available models; switch instantly without typing model names
 - **Live config tuning** — `/set` adjusts any numeric or boolean config value mid-session and persists it to `config.json`
-- **Vision, OCR, and PDF** — describe images, extract text, and read PDFs (native or scanned) using a vision-capable Ollama model; supports PNG, JPG, GIF, WebP, BMP, TIFF, and PDF
+- **Vision, OCR, and PDF** — describe images, extract text, and read PDFs (native or scanned) using a vision-capable model; supports PNG, JPG, GIF, WebP, BMP, TIFF, and PDF
 - **MCP server integration** — connect any [Model Context Protocol](https://modelcontextprotocol.io) server to extend the tool set with external capabilities
+
+## What's new in 1.6.0
+
+**OpenAI-compatible backend.** CLAWCLI now speaks both the native Ollama API and
+the OpenAI chat-completions API, with bearer-token auth. Set a key with `/key`,
+`CLAWCLI_API_KEY`, or `config.json`. Existing Ollama setups are unchanged —
+`api_format` defaults to `auto`, and with no key configured no `Authorization`
+header is sent at all. See [Connecting to a gateway](#connecting-to-an-openai-compatible-gateway).
+
+**⚠ Behaviour change — bash allowlist.** `allowed_commands.txt` previously gated
+on the command name alone, so several entries auto-ran arbitrary commands
+without confirmation (`find -exec`, `find -delete`, `awk 'BEGIN{system(...)}'`,
+`sed -i`, `xargs`, `ip link set`). `awk`, `xargs`, `sed`, `ip` and `ifconfig`
+have been removed from the shipped allowlist, and `find`/`sort` now require
+confirmation for their command-running and file-writing argument forms.
+
+If you run with `"confirm_bash": true` and relied on any of those, you will
+start seeing confirmation prompts. That is the fix working. Re-add entries to
+`allowed_commands.txt` at your own risk — an allowlisted `awk` is an
+allowlisted shell.
+
+**Security fixes.** `web_fetch` now re-validates every redirect hop, so a public
+URL can no longer redirect the agent onto your private network. `config.json`
+is written `0600` (it can hold tokens) and existing files are repaired at
+startup. Assorted correctness fixes: conversation history is no longer corrupted
+when a request fails mid-turn, Ctrl-C no longer exits without saving, and
+`--no-stream` works.
 
 ## Requirements
 
 - **Python 3.9+**
-- **[Ollama](https://ollama.com)** running locally or on your network
-- A pulled Ollama model (see [Model Recommendations](#model-recommendations) below)
+- **[Ollama](https://ollama.com)** running locally or on your network, *or* an OpenAI-compatible endpoint
+- A model the endpoint serves (see [Model Recommendations](#model-recommendations) below)
 - **SearXNG** *(optional)* — self-hosted search for `research <topic>` prompts
 - **mcp-kali-server** *(optional)* — self-hosted Kali Linux REST API for security scanning
 - **MCP server** *(optional)* — any HTTP-based Model Context Protocol server
-- **Vision-capable Ollama model** *(optional)* — for image reading/OCR (e.g. `gemma4`, `llava`, `minicpm-v`)
+- **Vision-capable model** *(optional)* — for image reading/OCR (e.g. `gemma4`, `llava`, `minicpm-v`)
 
 ## Quick Start
 
@@ -77,7 +108,7 @@ This removes the repo, command history, and all symlinks. Everything else (sessi
 
 ## Model Recommendations
 
-CLAWCLI works with any Ollama model. Tool use (file edits, bash, search) requires a model that supports function calling.
+CLAWCLI works with any model your endpoint serves. Tool use (file edits, bash, search) requires a model that supports function calling.
 
 | Model | VRAM | Notes |
 |-------|------|-------|
@@ -109,7 +140,7 @@ Switch models at any time with `/model` (interactive picker) or `/model llama3.1
 | `assistant_name` | `CLAWCLI` | Name shown in the banner and used by the model |
 | `user_name` | `""` | Your name — model will address you by it |
 | `temperature` | `0.1` | Model temperature |
-| `context_window` | auto-detected | Tokens; read from Ollama at startup |
+| `context_window` | auto-detected | Tokens; read from `/api/show` (Ollama) or `/models` (gateway) at startup |
 | `stream` | `true` | Streaming output |
 | `confirm_bash` | `true` | Prompt before unapproved bash commands |
 | `confirm_write` | `false` | Prompt before writing files |
@@ -314,7 +345,30 @@ equivalent to an allowlisted shell.
 
 Set `"confirm_write": true` to also require approval before the model writes or edits any file.
 
-Every bash command executed is logged to `audit.log` with timestamp and exit code.
+Every bash command executed is logged to `audit.log` with timestamp and exit code, with secrets redacted.
+
+### Network fetching
+
+`web_fetch` refuses private and link-local addresses (RFC1918, loopback,
+`169.254.0.0/16` cloud metadata, IPv6 ULA), accepts only `http`/`https`, and
+rejects a hostname if *any* of its resolved addresses is private. Redirects are
+followed manually — each hop is re-resolved and re-checked, capped at 5 — so a
+public URL cannot redirect the agent onto your internal network. With
+`curl_cffi` installed, the vetted IP is pinned for the connection, closing the
+DNS-rebinding window between check and connect.
+
+### Secrets
+
+`config.json` may hold an `api_key` and `mcp_bearer_token`. It is written
+atomically at mode `0600`, and an existing world-readable file containing a
+token is repaired at startup. Both keys are masked in `/config`, `/key` and
+`/doctor` output. Set `CLAWCLI_API_KEY` instead if you would rather the token
+never touch disk. Sessions are stored `0600` in a `0700` directory.
+
+### Reporting
+
+Security issues: see [SECURITY.md](SECURITY.md). Please do not open a public
+issue.
 
 ## Kali Security Scanning
 
@@ -405,7 +459,7 @@ The model maintains a persistent `memory/MEMORY.md` file across sessions. It rea
 
 ## Vision, OCR, and PDF
 
-CLAWCLI can read images and PDFs using any vision-capable Ollama model. Just reference a file in your prompt — the model picks the right tool automatically.
+CLAWCLI can read images and PDFs using any vision-capable model. Just reference a file in your prompt — the model picks the right tool automatically.
 
 ```
 what does this screenshot show? /path/to/screenshot.png

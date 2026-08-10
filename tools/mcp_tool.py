@@ -2,7 +2,20 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
 import requests
+
+
+def _client_version() -> str:
+    """Read VERSION so clientInfo cannot drift from the real release."""
+    try:
+        return (Path(__file__).resolve().parent.parent / "VERSION").read_text().strip() or "unknown"
+    except OSError:
+        return "unknown"
+
+
+_CLIENT_VERSION = _client_version()
 
 
 class MCPError(Exception):
@@ -67,7 +80,7 @@ class MCPClient:
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "clawcli", "version": "1.4.0"},
+                    "clientInfo": {"name": "clawcli", "version": _CLIENT_VERSION},
                 },
             }
             resp = requests.post(
