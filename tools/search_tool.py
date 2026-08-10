@@ -13,8 +13,27 @@ from urllib.parse import urlparse, urlunparse
 try:
     from curl_cffi import requests as _cffi_requests
     _CURL_CFFI_AVAILABLE = True
+    # curl_cffi 0.16 dropped the `resolve=` keyword in favour of passing raw
+    # libcurl options. CurlOpt.RESOLVE is how we pin the checked IP on both,
+    # so probe once and pick the right spelling at call time.
+    try:
+        from curl_cffi import CurlOpt as _CurlOpt
+        _CURL_CFFI_USES_CURL_OPTIONS = True
+    except ImportError:
+        _CurlOpt = None
+        _CURL_CFFI_USES_CURL_OPTIONS = False
 except ImportError:
     _CURL_CFFI_AVAILABLE = False
+    _CurlOpt = None
+    _CURL_CFFI_USES_CURL_OPTIONS = False
+
+
+def _pin_kwargs(host: str, port: int, ip: str) -> dict:
+    """Keyword args telling curl to use `ip` for `host:port`, across curl_cffi versions."""
+    entry = f"{host}:{port}:{ip}"
+    if _CURL_CFFI_USES_CURL_OPTIONS:
+        return {"curl_options": {_CurlOpt.RESOLVE: [entry]}}
+    return {"resolve": [entry]}  # curl_cffi < 0.16
 
 class _TextExtractor(HTMLParser):
     """Strip tags and skip script/style content for plain-text extraction."""
@@ -150,7 +169,7 @@ def web_fetch(url: str, max_chars: int = 8000) -> str:
                 url,
                 impersonate="chrome",
                 timeout=20,
-                resolve=[f"{host}:{port}:{ip}"],
+                **_pin_kwargs(host, port, ip),
             )
         else:
             # Note: requests fallback re-resolves DNS and does not pin the IP checked above.
