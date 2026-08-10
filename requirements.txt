@@ -1,4 +1,7 @@
-requests>=2.34.2
+# Pinned to the version Debian/Ubuntu ship as python3-requests. Raising this
+# floor breaks installs on system Python, where pip cannot replace the
+# distro-managed package. Dependabot is configured to leave it alone.
+requests>=2.32.3
 rich>=15.0.0
 prompt_toolkit>=3.0.53
 curl_cffi>=0.16.0

@@ -5,3 +5,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # requests is deliberately floored at the version Debian/Ubuntu ship as
+      # python3-requests. On a system-Python install pip cannot replace the
+      # distro-managed copy, so a raised floor makes the requirement
+      # unsatisfiable rather than merely out of date. Security fixes reach it
+      # via distro backports. See the comment in requirements.txt.
+      - dependency-name: "requests"
