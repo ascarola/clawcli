@@ -8,7 +8,7 @@ import socket
 import concurrent.futures
 import requests
 from html.parser import HTMLParser
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 try:
     from curl_cffi import requests as _cffi_requests
@@ -87,10 +87,25 @@ def _is_private_ip(ip_str: str) -> bool:
         return True
 
 
+# Shared, never shut down: a ThreadPoolExecutor used as a context manager calls
+# shutdown(wait=True) on exit, which blocks until getaddrinfo returns however
+# long that takes — silently defeating the timeout passed to future.result().
+# Keeping one pool alive lets the timeout actually bound the wait.
+_DNS_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="clawcli-dns"
+)
+
+# Only these can be fetched. Anything else (file:, gopher:, ftp:, data:) is a
+# way to reach local resources that IP checks do not cover.
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
 def _resolve_url(url: str, timeout: float = 5.0) -> tuple[str, str] | None:
-    """Resolve url hostname to IP once. Returns (resolved_ip, host) or None if blocked/failed."""
+    """Resolve url hostname to IP. Returns (resolved_ip, host) or None if blocked/failed."""
     try:
         parsed = urlparse(url)
+        if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+            return None
         host = parsed.hostname or ""
         if not host:
             return None
@@ -103,16 +118,20 @@ def _resolve_url(url: str, timeout: float = 5.0) -> tuple[str, str] | None:
         except ValueError:
             pass  # not an IP literal — fall through to DNS resolution
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-            addrs = future.result(timeout=timeout)
+        future = _DNS_POOL.submit(
+            socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM
+        )
+        addrs = future.result(timeout=timeout)
         if not addrs:
             return None
-        ip = addrs[0][4][0]
-        if _is_private_ip(ip):
-            return None
-        return (ip, host)
-    except (socket.gaierror, concurrent.futures.TimeoutError, Exception):
+        # Every address the name resolves to must be public, not just the first:
+        # a host publishing both a public and a private A record would otherwise
+        # be reachable whenever the private one sorted first.
+        for addr in addrs:
+            if _is_private_ip(addr[4][0]):
+                return None
+        return (addrs[0][4][0], host)
+    except Exception:
         return None
 
 
@@ -154,38 +173,68 @@ def web_search(query: str, searxng_url: str, num_results: int = 10) -> str:
         return f"Error: {e}"
 
 
+_MAX_REDIRECTS = 5
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
+
+
+def _fetch_once(url: str, ip: str, host: str, port: int):
+    """Single request with redirects disabled, connecting to the vetted IP."""
+    if _CURL_CFFI_AVAILABLE:
+        # Pass resolve hint so curl uses the already-checked IP
+        return _cffi_requests.get(
+            url,
+            impersonate="chrome",
+            timeout=20,
+            allow_redirects=False,
+            **_pin_kwargs(host, port, ip),
+        )
+    # Note: requests fallback re-resolves DNS and does not pin the IP checked
+    # above. DNS rebinding protection is incomplete on this path. Install
+    # curl_cffi to fix. Redirects are still validated hop by hop.
+    return requests.get(
+        url,
+        timeout=20,
+        allow_redirects=False,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; CLAWCLI/1.0)",
+            "Accept": "text/html,application/xhtml+xml,text/plain",
+        },
+    )
+
+
 def web_fetch(url: str, max_chars: int = 8000) -> str:
-    # Resolve DNS once and pin the IP — prevents DNS rebinding (check and connect use same address)
-    resolved = _resolve_url(url)
-    if resolved is None:
-        return f"Error: Fetching private/internal addresses is not permitted: {url}"
-    ip, host = resolved
-    parsed = urlparse(url)
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    # Redirects are followed manually: letting the HTTP client follow them
+    # would send the *redirect target* unvalidated, so a public URL answering
+    # 302 -> http://192.168.1.10/ would reach the private network despite the
+    # check below. Every hop is re-resolved and re-checked.
+    current = url
     try:
-        if _CURL_CFFI_AVAILABLE:
-            # Pass resolve hint so curl uses the already-checked IP
-            resp = _cffi_requests.get(
-                url,
-                impersonate="chrome",
-                timeout=20,
-                **_pin_kwargs(host, port, ip),
-            )
-        else:
-            # Note: requests fallback re-resolves DNS and does not pin the IP checked above.
-            # DNS rebinding protection is incomplete on this path. Install curl_cffi to fix.
-            resp = requests.get(
-                url,
-                timeout=20,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; CLAWCLI/1.0)",
-                    "Accept": "text/html,application/xhtml+xml,text/plain",
-                },
-            )
-        resp.raise_for_status()
-        content_type = resp.headers.get("content-type", "")
-        if "json" in content_type:
-            return json.dumps(resp.json(), indent=2)[:max_chars]
-        return _html_to_text(resp.text)[:max_chars]
+        for _ in range(_MAX_REDIRECTS + 1):
+            resolved = _resolve_url(current)
+            if resolved is None:
+                where = "" if current == url else f" (redirected from {url})"
+                return (
+                    f"Error: Fetching private/internal addresses is not "
+                    f"permitted: {current}{where}"
+                )
+            ip, host = resolved
+            parsed = urlparse(current)
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+            resp = _fetch_once(current, ip, host, port)
+
+            location = resp.headers.get("location", "")
+            if resp.status_code in _REDIRECT_CODES and location:
+                # Resolve relative Locations against the URL that issued them.
+                current = urljoin(current, location)
+                continue
+
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "")
+            if "json" in content_type:
+                return json.dumps(resp.json(), indent=2)[:max_chars]
+            return _html_to_text(resp.text)[:max_chars]
+
+        return f"Error: too many redirects (more than {_MAX_REDIRECTS}) starting at {url}"
     except Exception as e:
         return f"Fetch error: {e}"
