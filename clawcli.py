@@ -107,8 +107,13 @@ def _start_update_check() -> threading.Thread:
 
 
 def _finish_update_check(t: threading.Thread) -> None:
-    """Join the update thread (brief wait) and print notice if update is ready."""
-    t.join(timeout=0.2)
+    """Join the update thread (brief wait) and print notice if update is ready.
+
+    The thread starts at the top of main() and this runs after the banner, so
+    it has usually finished already. The wait is a grace period for a slow
+    ls-remote — long enough to be useful, short enough not to stall startup.
+    """
+    t.join(timeout=1.0)
     if getattr(t, "result", None) and t.result:  # type: ignore[attr-defined]
         console.print("[dim]Update available — run [bold]clawcli update[/bold] to install.[/dim]")
 
@@ -589,6 +594,11 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
 
     if not stream:
         parsed = api_client.parse_nonstream(resp.json(), fmt)
+        # The streaming path renders as it goes; without this, --no-stream
+        # would run the whole turn and print nothing.
+        if parsed["content"]:
+            console.print()
+            console.print(Markdown(_delatex(parsed["content"])))
         return {
             "message": {
                 "role": "assistant",
@@ -683,21 +693,28 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             results = web_search(query, searxng_url)
             user_input = f"Research: {query}\n\nSearch results:\n{results}\n\nPlease analyze and summarize these results."
 
+    # Everything appended from here belongs to this turn. On failure the whole
+    # turn is discarded: popping only the last message would leave an assistant
+    # tool_calls entry with no matching tool result, which derails the next turn.
+    turn_start = len(messages)
     messages.append({"role": "user", "content": user_input})
+
+    def _abandon_turn(note: str) -> list:
+        del messages[turn_start:]
+        console.print(note)
+        return messages
 
     last_call_hash = None  # reset per turn, not persisted across user messages
     for iteration in range(max_iters):
         try:
-            response = chat(messages, config, stream=True)
+            response = chat(messages, config, stream=config.get("stream", True))
         except AuthError as e:
-            console.print(f"[red]Authentication failed:[/red] {rich_escape(str(e))}")
-            messages.pop()
-            return messages
+            return _abandon_turn(f"[red]Authentication failed:[/red] {rich_escape(str(e))}")
         except requests.RequestException as e:
             backend = "Gateway" if api_client.is_gateway(config) else "Ollama"
-            console.print(f"[red]{backend} error: {rich_escape(str(e))}[/red]")
-            messages.pop()
-            return messages
+            return _abandon_turn(f"[red]{backend} error: {rich_escape(str(e))}[/red]")
+        except KeyboardInterrupt:
+            return _abandon_turn("\n[yellow]Interrupted — partial turn discarded.[/yellow]")
 
         msg = response.get("message", {})
         content    = msg.get("content", "")
@@ -780,6 +797,8 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
             )
             console.print("[yellow]Aborted — returning to prompt.[/yellow]")
             return messages
+        except KeyboardInterrupt:
+            return _abandon_turn("\n[yellow]Interrupted — partial turn discarded.[/yellow]")
 
         # Post-process: loop detection, size cap, preview, collect
         max_result_chars = config.get("max_tool_result_chars", 20000)
@@ -805,6 +824,14 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
         messages.extend(tool_results)
         # Don't break on loop detection — let the model see the message and pivot.
         # max_iters caps runaway loops.
+    else:
+        # Loop ran out of iterations while the model was still calling tools.
+        # Without this the turn just ends mid-task with no explanation.
+        console.print(
+            f"[yellow]⚠ Stopped after {max_iters} tool iterations — the model was "
+            f"still working. Ask it to continue, or raise max_tool_iterations "
+            f"with /set.[/yellow]"
+        )
 
     return messages
 
@@ -1509,7 +1536,7 @@ def load_session(session_id: str) -> tuple[list, str]:
 
 
 def list_sessions():
-    SESSIONS_DIR.mkdir(exist_ok=True)
+    SESSIONS_DIR.mkdir(mode=0o700, exist_ok=True)
     files = sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not files:
         console.print("[dim]No saved sessions.[/dim]")
@@ -1559,7 +1586,10 @@ def do_doctor(config: dict):
 
     # pymupdf
     try:
-        import fitz as _fitz
+        try:
+            import pymupdf as _fitz          # pymupdf >= 1.24; `fitz` warns from 1.28
+        except ImportError:
+            import fitz as _fitz
         console.print(f"[green]✓[/green]  pymupdf {_fitz.__version__} (PDF reading enabled)")
     except ImportError:
         console.print("[yellow]![/yellow]  pymupdf not installed — read_pdf unavailable")
@@ -1848,7 +1878,7 @@ def main():
     # Session setup
     session_id = new_session_id()
     if args.resume_last:
-        SESSIONS_DIR.mkdir(exist_ok=True)
+        SESSIONS_DIR.mkdir(mode=0o700, exist_ok=True)
         files = sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         if not files:
             console.print("[red]No saved sessions to resume.[/red]")

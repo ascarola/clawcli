@@ -116,7 +116,12 @@ def read_pdf(
     pages are rendered and sent to the vision model for OCR."""
     config = config or {}
     try:
-        import fitz  # pymupdf
+        # pymupdf 1.28 deprecated the `fitz` alias and warns on import; prefer
+        # the new name and fall back for older releases.
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz  # pymupdf < 1.24
     except ImportError:
         return (
             "Error: pymupdf is not installed. Run `pip install pymupdf` to enable PDF support."

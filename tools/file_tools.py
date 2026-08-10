@@ -227,7 +227,6 @@ def grep_files(
     case_insensitive: bool = False,
     context_lines: int = 0,
 ) -> str:
-    cmd = ["rg" if _has_rg() else "grep", "-r"]
     if _has_rg():
         return _rg_search(pattern, path, glob, output_mode, case_insensitive, context_lines)
     return _grep_search(pattern, path, glob, output_mode, case_insensitive, context_lines)
