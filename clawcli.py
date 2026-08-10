@@ -120,6 +120,8 @@ from tools.bash_tool import execute_bash
 from tools.search_tool import web_search, web_fetch
 from tools.mcp_tool import MCPClient, mcp_tools_to_ollama, check_mcp_health
 from tools.image_tool import read_image, read_pdf
+from tools import api_client
+from tools.api_client import AuthError
 
 # ── MCP state ────────────────────────────────────────────────────────────────
 _mcp_client: MCPClient | None = None
@@ -169,17 +171,26 @@ def load_config() -> dict:
     return cfg
 
 
+def save_config(config: dict) -> None:
+    """Persist config.json atomically at mode 0600.
+
+    config.json holds bearer tokens (api_key, mcp_bearer_token), so it must not
+    be world-readable, and a crash mid-write must not truncate it.
+    """
+    tmp = CONFIG_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(config, indent=2) + "\n")
+    tmp.chmod(0o600)
+    tmp.replace(CONFIG_FILE)
+
+
 def detect_context_window(config: dict) -> None:
-    """Update config['context_window'] with the model's actual max from Ollama."""
+    """Update config['context_window'] with the model's actual max from the backend."""
     try:
-        ollama_url = config.get("ollama_url", "http://localhost:11434")
-        info = requests.post(f"{ollama_url}/api/show", json={"name": config["model"]}, timeout=10).json()
-        model_info = info.get("model_info", {})
-        ctx = next((v for k, v in model_info.items() if "context_length" in k), None)
+        ctx = api_client.model_context_length(config, config["model"])
         if ctx:
             config["context_window"] = ctx
-    except (requests.RequestException, ValueError, KeyError):
-        pass  # Ollama unreachable or model unknown — keep config.json value
+    except (requests.RequestException, AuthError, ValueError, KeyError):
+        pass  # backend unreachable, unauthenticated, or model unknown — keep configured value
 
 
 def load_memory() -> str:
@@ -337,7 +348,6 @@ def confirm_kali_destructive(tool: str, target: str) -> bool:
 
 
 def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) -> str:
-    ollama_url  = config.get("ollama_url", "http://localhost:11434")
     searxng_url = config.get("searxng_url", "")
 
     try:
@@ -434,7 +444,7 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
                 args["file_path"],
                 prompt=args.get("prompt", "Describe this image in detail."),
                 vision_model=vision_model,
-                ollama_url=ollama_url,
+                config=config,
                 timeout=config.get("ollama_timeout", 120),
             )
 
@@ -444,7 +454,7 @@ def dispatch_tool(name: str, args: dict, config: dict, confirm: bool = False) ->
                 args["file_path"],
                 prompt=args.get("prompt", "Extract all text from this page."),
                 vision_model=vision_model,
-                ollama_url=ollama_url,
+                config=config,
                 timeout=config.get("ollama_timeout", 120),
             )
 
@@ -569,28 +579,25 @@ def render_tool_call(name: str, args: dict):
 
 
 def chat(messages: list, config: dict, stream: bool = True) -> dict:
-    url   = config.get("ollama_url", "http://localhost:11434") + "/api/chat"
-    model = config.get("model", "gemma4:26b")
-    payload = {
-        "model": model,
-        "messages": messages,
-        "tools": TOOL_DEFINITIONS
-            + (KALI_TOOL_DEFINITIONS if config.get("kali_server_url") else [])
-            + _mcp_tool_definitions,
-        "stream": stream,
-        "options": {
-            "temperature": config.get("temperature", 0.1),
-            "num_ctx": config.get("context_window", 8192),
-        },
-    }
-    # 'think' is a top-level chat parameter in the Ollama API, not a model option
-    if config.get("think") is not None:
-        payload["think"] = config["think"]
-    resp = requests.post(url, json=payload, stream=stream, timeout=config.get("ollama_timeout", 1800))
-    resp.raise_for_status()
+    fmt   = api_client.resolve_format(config)
+    tools = (
+        TOOL_DEFINITIONS
+        + (KALI_TOOL_DEFINITIONS if config.get("kali_server_url") else [])
+        + _mcp_tool_definitions
+    )
+    resp = api_client.post_chat(config, messages, tools, stream)
 
     if not stream:
-        return resp.json()
+        parsed = api_client.parse_nonstream(resp.json(), fmt)
+        return {
+            "message": {
+                "role": "assistant",
+                "content": parsed["content"],
+                "tool_calls": parsed["tool_calls"],
+            },
+            "prompt_tokens": parsed["prompt_tokens"],
+            "completion_tokens": parsed["completion_tokens"],
+        }
 
     # Streaming: accumulate content and render live as Markdown
     full_content      = ""
@@ -615,18 +622,16 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
     chunk_count = 0
     RENDER_EVERY = 15  # re-render every N chunks to avoid terminal overflow artifacts
     with Live(Spinner("dots", text="[dim]thinking…[/dim]"), console=console, refresh_per_second=12) as live:
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for event in api_client.iter_stream(resp, fmt):
+            if event.get("done"):
+                tool_calls        = event.get("tool_calls", [])
+                prompt_tokens     = event.get("prompt_tokens", 0)
+                completion_tokens = event.get("completion_tokens", 0)
+                if full_content:
+                    live.update(Markdown(_delatex(full_content)))
+                break
 
-            msg           = chunk.get("message", {})
-            delta_content = msg.get("content", "")
-            delta_tools   = msg.get("tool_calls", [])
-
+            delta_content = event.get("content", "")
             if delta_content:
                 full_content += delta_content
                 chunk_count  += 1
@@ -638,16 +643,6 @@ def chat(messages: list, config: dict, stream: bool = True) -> dict:
                     live.update(Markdown(_delatex(full_content.rstrip())))
                     console.print("\n[yellow]⚠ Runaway repetition detected — output truncated.[/yellow]")
                     break
-
-            if delta_tools:
-                tool_calls.extend(delta_tools)
-
-            if chunk.get("done"):
-                prompt_tokens     = chunk.get("prompt_eval_count", 0)
-                completion_tokens = chunk.get("eval_count", 0)
-                if full_content:
-                    live.update(Markdown(_delatex(full_content)))
-                break
 
     if not full_content:
         console.print()  # blank line after tool-only responses
@@ -694,8 +689,13 @@ def run_agentic_loop(user_input: str, messages: list, config: dict) -> list:
     for iteration in range(max_iters):
         try:
             response = chat(messages, config, stream=True)
+        except AuthError as e:
+            console.print(f"[red]Authentication failed:[/red] {rich_escape(str(e))}")
+            messages.pop()
+            return messages
         except requests.RequestException as e:
-            console.print(f"[red]Ollama error: {e}[/red]")
+            backend = "Gateway" if api_client.is_gateway(config) else "Ollama"
+            console.print(f"[red]{backend} error: {rich_escape(str(e))}[/red]")
             messages.pop()
             return messages
 
@@ -826,7 +826,7 @@ def show_help():
         "[bold]Commands:[/bold]\n"
         "  /help               — show this help\n"
         "  /update             — pull latest version (restart to apply)\n"
-        "  /doctor             — check Ollama, SearXNG, and dependencies\n"
+        "  /doctor             — check the LLM endpoint, SearXNG, and dependencies\n"
         "  /memory             — show current memory\n"
         "  /clear              — clear conversation history\n"
         "  /compact            — summarize history to free context window\n"
@@ -835,7 +835,8 @@ def show_help():
         "  /config             — show current config\n"
         "  /cwd <path>         — change working directory\n"
         "  /model              — interactive model picker (↑↓ to navigate)\n"
-        "  /model <name>       — switch Ollama model directly\n"
+        "  /model <name>       — switch model directly\n"
+        "  /key <token>        — set the LLM API key (or /key to check, /key clear)\n"
         "  /searxng <url>      — set SearXNG URL (or /searxng to check, /searxng disable)\n"
         "  /kali <url>         — set Kali server URL (or /kali to check, /kali disable)\n"
         "  /mcp <url>             — set MCP server URL (or /mcp to check, /mcp disable)\n"
@@ -920,14 +921,16 @@ _SETTABLE_KEYS: dict[str, tuple[str, str]] = {
     "kali_timeout":          ("int",   "Kali server request timeout in seconds"),
     "confirm_bash":          ("bool",  "Prompt before unapproved bash commands"),
     "confirm_write":         ("bool",  "Prompt before writing files"),
-    "vision_model":          ("str",   "Ollama model to use for read_image (defaults to active model)"),
+    "vision_model":          ("str",   "Model to use for read_image (defaults to active model)"),
+    "api_format":            ("str",   "Wire format: auto | ollama | openai"),
+    "api_base":              ("str",   "API base URL (overrides ollama_url; set to a /v1 endpoint for a gateway)"),
 }
 
 
 def _model_switch(name: str, config: dict, messages: list) -> None:
     config["model"] = name
     detect_context_window(config)
-    CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+    save_config(config)
     for m in messages:
         if m.get("role") == "system":
             m["content"] = build_system_prompt(config)
@@ -944,14 +947,34 @@ def _model_picker(models: list, current: str) -> str | None:
             break
     result = [None]
 
+    def _describe(m: dict) -> str:
+        """Render whichever metadata the backend supplied.
+
+        Ollama gives size/params/quantization; a gateway gives backend name,
+        context length and capabilities instead.
+        """
+        bits = []
+        params = m.get("params") or ""
+        quant  = m.get("quant") or ""
+        if params or quant:
+            bits.append(f"{params} {quant}".strip())
+        if m.get("size"):
+            bits.append(f"{m['size'] / 1e9:.1f}GB")
+        if m.get("backend") and m["backend"] != "ollama":
+            bits.append(str(m["backend"]))
+        ctx = m.get("context_length")
+        if ctx:
+            bits.append(f"{ctx // 1024}K ctx" if ctx >= 1024 else f"{ctx} ctx")
+        caps = [c for c in (m.get("capabilities") or []) if c != "completion"]
+        if caps:
+            bits.append(",".join(caps))
+        return f"  [{' · '.join(bits)}]" if bits else ""
+
     def get_content():
         lines = [("bold", " Switch Model\n\n")]
         for i, m in enumerate(models):
             name = m["name"]
-            size_gb = m["size"] / 1e9
-            params = m.get("details", {}).get("parameter_size", "")
-            quant  = m.get("details", {}).get("quantization_level", "")
-            info   = f"  [{params} {quant} {size_gb:.1f}GB]".replace("[  ", "[").strip()
+            info = _describe(m)
             active = "  ← active" if name == current else ""
             if i == idx[0]:
                 lines.append(("class:sel", f"  ▶ {name}  {info}{active}\n"))
@@ -1024,7 +1047,16 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         return True, messages
 
     elif command == "/config":
-        display = {k: ("***" if k == "mcp_bearer_token" and v else v) for k, v in config.items()}
+        _secret_keys = ("mcp_bearer_token", "api_key")
+        display = {
+            k: (api_client.redact_key(v) if k in _secret_keys and v else v)
+            for k, v in config.items()
+        }
+        # Surface the resolved backend, which is inferred rather than stored.
+        display["_resolved_api_format"] = api_client.resolve_format(config)
+        display["_resolved_api_base"]   = api_client.api_base(config)
+        if os.environ.get(api_client.API_KEY_ENV):
+            display["_api_key_source"] = f"${api_client.API_KEY_ENV} (overrides config)"
         console.print(Panel(json.dumps(display, indent=2), title="Config", border_style="dim"))
         return True, messages
 
@@ -1045,19 +1077,58 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
             _model_switch(arg, config, messages)
         else:
             # Interactive picker — /model or /model list
-            ollama_url = config.get("ollama_url", "http://localhost:11434")
             try:
-                data = requests.get(f"{ollama_url}/api/tags", timeout=10).json()
-                models = data.get("models", [])
+                models = api_client.list_models(config)
                 if not models:
-                    console.print("[yellow]No models found on Ollama server.[/yellow]")
+                    console.print("[yellow]No models found on the configured server.[/yellow]")
                     return True, messages
                 current = config.get("model", "")
                 selected = _model_picker(models, current)
                 if selected:
                     _model_switch(selected, config, messages)
+            except AuthError as e:
+                console.print(f"[red]Authentication failed:[/red] {rich_escape(str(e))}")
             except Exception as e:
-                console.print(f"[red]Could not fetch models: {e}[/red]")
+                console.print(f"[red]Could not fetch models: {rich_escape(str(e))}[/red]")
+        return True, messages
+
+    elif command == "/key":
+        sub = arg.strip()
+        if sub.lower() in ("clear", "remove", "delete"):
+            config.pop("api_key", None)
+            save_config(config)
+            console.print("[dim]API key cleared. Requests will be sent unauthenticated.[/dim]")
+        elif sub:
+            config["api_key"] = sub
+            save_config(config)
+            console.print(f"[dim]API key saved to config.json ({api_client.redact_key(sub)}).[/dim]")
+            # Re-detect context window now that authenticated calls can succeed
+            detect_context_window(config)
+            for m in messages:
+                if m.get("role") == "system":
+                    m["content"] = build_system_prompt(config)
+                    break
+            try:
+                models = api_client.list_models(config)
+                console.print(f"[green]✓[/green]  Authenticated — {len(models)} model(s) available.")
+            except AuthError as e:
+                console.print(f"[red]✗[/red]  {rich_escape(str(e))}")
+            except Exception as e:
+                console.print(f"[yellow]![/yellow]  Key saved, but the server is unreachable: {rich_escape(str(e))}")
+        else:
+            env_key = os.environ.get(api_client.API_KEY_ENV, "").strip()
+            cfg_key = (config.get("api_key") or "").strip()
+            console.print(f"Endpoint:    [cyan]{api_client.api_base(config)}[/cyan]")
+            console.print(f"API format:  [cyan]{api_client.resolve_format(config)}[/cyan]"
+                          f"  [dim](api_format = {config.get('api_format', 'auto')})[/dim]")
+            if env_key:
+                console.print(f"API key:     [green]{api_client.redact_key(env_key)}[/green]"
+                              f"  [dim]from ${api_client.API_KEY_ENV} — overrides config.json[/dim]")
+            elif cfg_key:
+                console.print(f"API key:     [green]{api_client.redact_key(cfg_key)}[/green]  [dim]from config.json[/dim]")
+            else:
+                console.print("API key:     [dim]not set — requests are sent unauthenticated[/dim]")
+            console.print("\n[dim]Usage: /key <token> | /key clear[/dim]")
         return True, messages
 
     elif command == "/update":
@@ -1072,7 +1143,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
     elif command == "/kali":
         if arg.lower() == "disable":
             config.pop("kali_server_url", None)
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            save_config(config)
             for m in messages:
                 if m.get("role") == "system":
                     m["content"] = build_system_prompt(config)
@@ -1083,7 +1154,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
             ok, msg = kali_health(url)
             if ok:
                 config["kali_server_url"] = url
-                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                save_config(config)
                 # Rebuild system message with new Kali context
                 for m in messages:
                     if m.get("role") == "system":
@@ -1094,7 +1165,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print(f"[red]✗[/red]  {msg}")
                 console.print("[dim]  Server saved anyway — use /kali disable to remove it.[/dim]")
                 config["kali_server_url"] = url
-                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                save_config(config)
         else:
             kali_url = config.get("kali_server_url", "")
             if kali_url:
@@ -1143,7 +1214,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
     elif command == "/searxng":
         if arg.lower() == "disable":
             config.pop("searxng_url", None)
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            save_config(config)
             for m in messages:
                 if m.get("role") == "system":
                     m["content"] = build_system_prompt(config)
@@ -1159,7 +1230,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 )
                 resp.raise_for_status()
                 config["searxng_url"] = url
-                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                save_config(config)
                 for m in messages:
                     if m.get("role") == "system":
                         m["content"] = build_system_prompt(config)
@@ -1192,7 +1263,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         if sub == "disable":
             config.pop("mcp_server_url", None)
             config.pop("mcp_bearer_token", None)
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            save_config(config)
             init_mcp(config, quiet=True)
             console.print("[dim]MCP server removed from config.[/dim]")
         elif sub == "token":
@@ -1201,7 +1272,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 console.print("[red]Usage: /mcp token <value>[/red]")
             else:
                 config["mcp_bearer_token"] = token_val
-                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                save_config(config)
                 console.print("[dim]MCP bearer token saved. Reconnecting...[/dim]")
                 init_mcp(config)
         elif sub == "tools":
@@ -1225,7 +1296,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 if tool_name not in excluded:
                     excluded.append(tool_name)
                     config["mcp_excluded_tools"] = excluded
-                    CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                    save_config(config)
                     init_mcp(config, quiet=True)
                 console.print(f"[dim]MCP tool excluded: {tool_name}[/dim]")
         elif sub == "include":
@@ -1237,7 +1308,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
                 if tool_name in excluded:
                     excluded.remove(tool_name)
                     config["mcp_excluded_tools"] = excluded
-                    CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                    save_config(config)
                     init_mcp(config, quiet=True)
                 console.print(f"[dim]MCP tool re-included: {tool_name}[/dim]")
         elif sub and not sub.startswith("http"):
@@ -1249,7 +1320,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
             ok, msg = check_mcp_health(url, token)
             if ok:
                 config["mcp_server_url"] = url
-                CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+                save_config(config)
                 init_mcp(config, quiet=True)
                 console.print(f"[green]✓[/green]  MCP server set to {url} — {msg} — saved")
             else:
@@ -1275,15 +1346,15 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         arg = arg.strip().lower()
         if arg in ("on", "true", "1"):
             config["think"] = True
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            save_config(config)
             console.print("[green]Thinking mode ON[/green] — model will show reasoning (saved to config.json)")
         elif arg in ("off", "false", "0"):
             config["think"] = False
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            save_config(config)
             console.print("[yellow]Thinking mode OFF[/yellow] — reasoning suppressed (saved to config.json)")
         elif arg in ("default", "reset"):
             config.pop("think", None)
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            save_config(config)
             console.print("[dim]Thinking mode reset to model default (removed from config.json)[/dim]")
         elif arg == "":
             pass  # no-op — just show current status below
@@ -1329,7 +1400,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
             except Exception:
                 console.print(f"[red]Could not read defaults for {key}[/red]")
                 return True, messages
-            CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+            save_config(config)
             console.print(f"[dim]{key} reset to default: {config[key]} — saved[/dim]")
             return True, messages
         try:
@@ -1349,7 +1420,7 @@ def handle_slash_command(cmd: str, config: dict, messages: list, session_id: str
         except ValueError:
             console.print(f"[red]Invalid value:[/red] '{raw}' — expected {typ}")
             return True, messages
-        CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n")
+        save_config(config)
         console.print(f"[dim]{key} = {config[key]} — saved[/dim]")
         return True, messages
 
@@ -1392,6 +1463,25 @@ def purge_old_sessions(days: int = 30):
                 f.unlink()
         except OSError:
             pass
+
+
+def _secure_config_file():
+    """Tighten config.json to 0600 when it holds a token.
+
+    Installs upgraded with `git pull` (what /update does) never re-run
+    install.sh, so this is the only thing that fixes permissions on a config
+    written before tokens were stored there.
+    """
+    if not CONFIG_FILE.exists():
+        return
+    try:
+        if not (CONFIG_FILE.stat().st_mode & 0o077):
+            return  # already private
+        cfg = json.loads(CONFIG_FILE.read_text())
+        if cfg.get("api_key") or cfg.get("mcp_bearer_token"):
+            CONFIG_FILE.chmod(0o600)
+    except (OSError, ValueError):
+        pass  # unreadable or malformed — doctor will surface it
 
 
 def _secure_sessions_dir():
@@ -1476,41 +1566,59 @@ def do_doctor(config: dict):
         console.print("     Fix: pip install pymupdf")
         issues += 1
 
-    # Ollama
-    ollama_url = config.get("ollama_url", "http://localhost:11434")
+    # Backend: bare Ollama or an OpenAI-compatible gateway
+    api_base   = api_client.api_base(config)
+    api_fmt    = api_client.resolve_format(config)
     model      = config.get("model", "")
+    backend    = "Gateway (OpenAI-compatible)" if api_fmt == "openai" else "Ollama (native API)"
+    console.print(f"[green]✓[/green]  Backend: {backend}")
+    console.print(f"     Endpoint: {api_base}")
+
+    key = api_client.api_key(config)
+    if key:
+        source = (f"${api_client.API_KEY_ENV}"
+                  if os.environ.get(api_client.API_KEY_ENV, "").strip() else "config.json")
+        console.print(f"[green]✓[/green]  API key set ({api_client.redact_key(key)}, from {source})")
+    elif api_fmt == "openai":
+        console.print("[yellow]![/yellow]  No API key set — gateways normally require one")
+        console.print(f"     Fix: /key <token>, or export {api_client.API_KEY_ENV}")
+        issues += 1
+    else:
+        console.print("[dim]-[/dim]  No API key set (not required for a bare Ollama host)")
+
+    models = []
     try:
-        resp   = requests.get(f"{ollama_url}/api/tags", timeout=5)
-        resp.raise_for_status()
-        models = [m["name"] for m in resp.json().get("models", [])]
-        console.print(f"[green]✓[/green]  Ollama reachable at {ollama_url}")
+        models = [m["name"] for m in api_client.list_models(config, timeout=5)]
+        console.print(f"[green]✓[/green]  Reachable — {len(models)} model(s) advertised")
         if model in models:
             console.print(f"[green]✓[/green]  Model '{model}' available")
         else:
             console.print(f"[yellow]![/yellow]  Model '{model}' not found on this server")
             if models:
                 console.print(f"     Available: {', '.join(models[:6])}")
-            console.print(f"     Fix: ollama pull {model}")
+            fix = "check the model name against /model" if api_fmt == "openai" else f"ollama pull {model}"
+            console.print(f"     Fix: {fix}")
             issues += 1
+    except AuthError as e:
+        console.print(f"[red]✗[/red]  {e}")
+        issues += 1
     except Exception as e:
-        console.print(f"[red]✗[/red]  Cannot reach Ollama at {ollama_url}")
+        console.print(f"[red]✗[/red]  Cannot reach {api_base}")
         console.print(f"     {e}")
         issues += 1
 
     # vision model (optional)
     vision_model = config.get("vision_model", "")
     if vision_model:
-        try:
-            resp2 = requests.get(f"{ollama_url}/api/tags", timeout=5)
-            vmodels = [m["name"] for m in resp2.json().get("models", [])]
-            if vision_model in vmodels:
-                console.print(f"[green]✓[/green]  Vision model '{vision_model}' available")
-            else:
-                console.print(f"[yellow]![/yellow]  Vision model '{vision_model}' not found on Ollama server")
-                console.print(f"     Fix: ollama pull {vision_model}")
-                issues += 1
-        except Exception:
-            pass  # Ollama already flagged as unreachable above
+        if not models:
+            pass  # backend already flagged as unreachable above
+        elif vision_model in models:
+            console.print(f"[green]✓[/green]  Vision model '{vision_model}' available")
+        else:
+            console.print(f"[yellow]![/yellow]  Vision model '{vision_model}' not found on the server")
+            fix = "check the model name against /model" if api_fmt == "openai" else f"ollama pull {vision_model}"
+            console.print(f"     Fix: {fix}")
+            issues += 1
     else:
         console.print(f"[dim]-[/dim]  vision_model not set — read_image/read_pdf will use active model (optional — /set vision_model <name>)")
 
@@ -1646,7 +1754,8 @@ _SLASH_COMMANDS = [
     ("/config",            "show current config"),
     ("/cwd <path>",        "change working directory"),
     ("/model",             "interactive model picker (↑↓ arrow keys)"),
-    ("/model <name>",      "switch Ollama model directly"),
+    ("/model <name>",      "switch model directly"),
+    ("/key <token>",       "set the API key for the LLM endpoint (or /key to check, /key clear)"),
     ("/searxng <url>",     "set SearXNG URL (or /searxng to check status, /searxng disable)"),
     ("/kali <url>",        "set Kali security server URL (or /kali to check status, /kali disable)"),
     ("/mcp <url>",            "set MCP server URL (or /mcp to check, /mcp tools, /mcp disable)"),
@@ -1705,6 +1814,7 @@ def main():
     elif args.confirm:
         config["confirm_bash"] = True
 
+    _secure_config_file()    # config.json holds bearer tokens — keep it 0600
     _secure_sessions_dir()   # fix permissions on any existing world-readable files
     purge_old_sessions(days=30)
 

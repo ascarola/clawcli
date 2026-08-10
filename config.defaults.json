@@ -1,6 +1,9 @@
 {
   "model": "gemma4:26b",
   "ollama_url": "http://localhost:11434",
+  "api_base": "",
+  "api_key": "",
+  "api_format": "auto",
   "searxng_url": "",
   "assistant_name": "CLAWCLI",
   "user_name": "",

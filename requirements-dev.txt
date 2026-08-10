@@ -1,0 +1,4 @@
+# Development-only dependencies. Not needed to run CLAWCLI.
+#   pip install -r requirements-dev.txt && pytest
+-r requirements.txt
+pytest>=8.0.0

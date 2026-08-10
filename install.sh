@@ -5,6 +5,9 @@
 #
 # Non-interactive (env var overrides):
 #   OLLAMA_URL=http://myserver:11434 OLLAMA_MODEL=llama3.2:3b bash install.sh
+#
+# Against an OpenAI-compatible gateway instead of a bare Ollama host:
+#   OLLAMA_URL=http://gateway:5010/v1 API_KEY=sk-... bash install.sh
 set -e
 
 REPO_OWNER="${REPO_OWNER:-ascarola}"
@@ -123,31 +126,64 @@ else
     echo "    (Press Enter to accept the default shown in brackets)"
     echo ""
 
-    # Ollama URL
+    # LLM endpoint — a bare Ollama host, or an OpenAI-compatible gateway
     if [ -z "$OLLAMA_URL" ]; then
         if [ "$IS_INTERACTIVE" -eq 1 ]; then
-            OLLAMA_URL=$(ask "  Ollama server URL" "http://localhost:11434")
+            echo "  CLAWCLI talks to either an Ollama host directly, or an"
+            echo "  OpenAI-compatible gateway (LiteLLM, vLLM, a custom gateway…)."
+            echo "  For a gateway, give the full base URL including /v1."
+            OLLAMA_URL=$(ask "  LLM endpoint URL" "http://localhost:11434")
         else
             OLLAMA_URL="http://localhost:11434"
         fi
     fi
 
-    # Ollama model
+    # API key — required by gateways, never by a bare Ollama host.
+    # Detect the gateway case from the /v1 suffix so we only nag when it matters.
+    case "$OLLAMA_URL" in
+        */v1|*/v1/) IS_GATEWAY=1 ;;
+        *)          IS_GATEWAY=0 ;;
+    esac
+    if [ -z "$API_KEY" ] && [ "$IS_INTERACTIVE" -eq 1 ]; then
+        echo ""
+        if [ "$IS_GATEWAY" -eq 1 ]; then
+            echo "  That looks like an OpenAI-compatible gateway, which normally needs a key."
+            API_KEY=$(ask "  API key" "")
+        else
+            echo "  A bare Ollama host needs no API key — leave blank unless yours is"
+            echo "  behind an authenticating proxy."
+            API_KEY=$(ask "  API key (optional)" "")
+        fi
+    fi
+
+    # Model list — endpoint-shaped, and authenticated when a key was given
     if [ -z "$OLLAMA_MODEL" ]; then
         if [ "$IS_INTERACTIVE" -eq 1 ]; then
             echo ""
             OLLAMA_DEFAULT="gemma4:26b"
-            FETCHED_MODELS=$(curl -sf --max-time 5 "$OLLAMA_URL/api/tags" 2>/dev/null \
+            if [ "$IS_GATEWAY" -eq 1 ]; then
+                MODELS_URL="$OLLAMA_URL/models"
+            else
+                MODELS_URL="$OLLAMA_URL/api/tags"
+            fi
+            if [ -n "$API_KEY" ]; then
+                RAW_MODELS=$(curl -sf --max-time 5 -H "Authorization: Bearer $API_KEY" "$MODELS_URL" 2>/dev/null)
+            else
+                RAW_MODELS=$(curl -sf --max-time 5 "$MODELS_URL" 2>/dev/null)
+            fi
+            FETCHED_MODELS=$(printf '%s' "$RAW_MODELS" \
                 | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    models = data.get('models', [])
+    # Ollama: {'models': [{'name': ...}]}  |  OpenAI: {'data': [{'id': ...}]}
+    models = [m['name'] for m in data.get('models', [])] or \
+             [m['id'] for m in data.get('data', [])]
     if models:
-        for m in models:
-            print('   ', m['name'])
+        for name in models:
+            print('   ', name)
         # suggest first model as default
-        print('__DEFAULT__', models[0]['name'])
+        print('__DEFAULT__', models[0])
 except Exception:
     pass
 " 2>/dev/null)
@@ -156,6 +192,9 @@ except Exception:
                 [ -n "$FETCHED_DEFAULT" ] && OLLAMA_DEFAULT="$FETCHED_DEFAULT"
                 echo "  Models available on $OLLAMA_URL:"
                 echo "$FETCHED_MODELS" | grep -v "^__DEFAULT__"
+            elif [ "$IS_GATEWAY" -eq 1 ]; then
+                echo "  Could not list models from $MODELS_URL"
+                echo "  (check the URL and API key — you can fix this later with /key)"
             else
                 echo "  Suggested models (you must have these pulled in Ollama):"
                 echo "    gemma4:26b   — best quality, needs ~20GB VRAM"
@@ -232,7 +271,13 @@ except Exception:
 
     echo ""
     echo "  Settings:"
-    echo "    Ollama URL:       $OLLAMA_URL"
+    echo "    LLM endpoint:     $OLLAMA_URL"
+    if [ "$IS_GATEWAY" -eq 1 ]; then
+        echo "    API format:       openai (gateway)"
+    else
+        echo "    API format:       ollama (native)"
+    fi
+    echo "    API key:          ${API_KEY:+set}${API_KEY:-not set}"
     echo "    Model:            $OLLAMA_MODEL"
     echo "    Vision model:     ${VISION_MODEL:-same as active model}"
     echo "    SearXNG:          ${SEARXNG_URL:-not configured}"
@@ -243,12 +288,16 @@ except Exception:
     echo "    Your name:        ${USER_NAME:-not set}"
     echo ""
 
-    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$VISION_MODEL" "$SEARXNG_URL" "$KALI_SERVER_URL" "$MCP_SERVER_URL" "$MCP_BEARER_TOKEN" "$ASSISTANT_NAME" "$USER_NAME" <<'PYEOF'
-import sys, json
-defaults_path, out_path, ollama_url, model, vision_model, searxng_url, kali_server_url, mcp_server_url, mcp_bearer_token, assistant_name, user_name = sys.argv[1:]
+    "$VENV/bin/python3" - "$DEFAULTS" "$CONFIG" "$OLLAMA_URL" "$OLLAMA_MODEL" "$VISION_MODEL" "$SEARXNG_URL" "$KALI_SERVER_URL" "$MCP_SERVER_URL" "$MCP_BEARER_TOKEN" "$ASSISTANT_NAME" "$USER_NAME" "$API_KEY" <<'PYEOF'
+import sys, json, os
+defaults_path, out_path, ollama_url, model, vision_model, searxng_url, kali_server_url, mcp_server_url, mcp_bearer_token, assistant_name, user_name, api_key = sys.argv[1:]
 with open(defaults_path) as f:
     cfg = json.load(f)
 cfg["ollama_url"]        = ollama_url
+cfg["api_key"]           = api_key
+# api_format stays "auto": it infers openai from a /v1 URL and ollama otherwise,
+# so an existing Ollama setup keeps its exact previous behaviour.
+cfg["api_format"]        = "auto"
 cfg["model"]             = model
 cfg["vision_model"]      = vision_model
 cfg["searxng_url"]       = searxng_url
@@ -260,7 +309,35 @@ cfg["user_name"]         = user_name
 with open(out_path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
-print("    config.json created")
+# config.json can hold bearer tokens — keep it owner-readable only.
+os.chmod(out_path, 0o600)
+print("    config.json created (mode 0600)")
+PYEOF
+fi
+
+# Existing installs predate api_key/api_format and predate the 0600 tightening.
+if [ -f "$CONFIG" ]; then
+    "$VENV/bin/python3" - "$CONFIG" "$DEFAULTS" <<'PYEOF'
+import sys, json, os
+cfg_path, defaults_path = sys.argv[1:]
+try:
+    with open(cfg_path) as f:
+        cfg = json.load(f)
+except Exception:
+    raise SystemExit(0)  # malformed config — leave it alone, doctor will flag it
+with open(defaults_path) as f:
+    defaults = json.load(f)
+added = [k for k in ("api_base", "api_key", "api_format") if k not in cfg]
+for k in added:
+    cfg[k] = defaults.get(k, "")
+if added:
+    with open(cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+    print(f"    config.json: added {', '.join(added)} (defaults preserve existing behaviour)")
+if (os.stat(cfg_path).st_mode & 0o077) and (cfg.get("api_key") or cfg.get("mcp_bearer_token")):
+    os.chmod(cfg_path, 0o600)
+    print("    config.json: tightened permissions to 0600 (contains a token)")
 PYEOF
 fi
 
@@ -317,15 +394,43 @@ else
     echo "==> Installed to $BIN_LINK"
 fi
 
-# ── Verify Ollama connectivity ────────────────────────────────────────────────
-OLLAMA_CHECK_URL="${OLLAMA_URL:-$(python3 -c "import json; print(json.load(open('$CONFIG'))['ollama_url'])" 2>/dev/null || echo "http://localhost:11434")}"
+# ── Verify LLM endpoint connectivity ──────────────────────────────────────────
+# Read back whatever ended up in config.json so this also covers upgrades.
+CHECK=$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CONFIG'))
+except Exception:
+    cfg = {}
+base = (cfg.get('api_base') or cfg.get('ollama_url') or 'http://localhost:11434').rstrip('/')
+key  = cfg.get('api_key') or ''
+tail = base.rsplit('/', 1)[-1].lower()
+fmt  = cfg.get('api_format') or 'auto'
+if fmt == 'auto':
+    fmt = 'openai' if tail.startswith('v') and tail[1:].isdigit() else 'ollama'
+print(base)
+print('/models' if fmt == 'openai' else '/api/tags')
+print(key)
+" 2>/dev/null)
+CHECK_URL=$(echo "$CHECK" | sed -n 1p)
+CHECK_PATH=$(echo "$CHECK" | sed -n 2p)
+CHECK_KEY=$(echo "$CHECK" | sed -n 3p)
+[ -n "$API_KEY" ] && CHECK_KEY="$API_KEY"
+[ -z "$CHECK_URL" ] && CHECK_URL="${OLLAMA_URL:-http://localhost:11434}"
+[ -z "$CHECK_PATH" ] && CHECK_PATH="/api/tags"
+
 echo ""
-echo "==> Testing Ollama connectivity..."
-if curl -sf "$OLLAMA_CHECK_URL/api/tags" >/dev/null 2>&1; then
-    echo "    OK — Ollama reachable at $OLLAMA_CHECK_URL"
+echo "==> Testing LLM endpoint connectivity..."
+if [ -n "$CHECK_KEY" ]; then
+    CHECK_OK=$(curl -sf --max-time 10 -H "Authorization: Bearer $CHECK_KEY" "$CHECK_URL$CHECK_PATH" >/dev/null 2>&1 && echo yes || echo no)
 else
-    echo "    WARNING: Cannot reach Ollama at $OLLAMA_CHECK_URL"
-    echo "    Edit $CONFIG to update ollama_url, or run: clawcli doctor"
+    CHECK_OK=$(curl -sf --max-time 10 "$CHECK_URL$CHECK_PATH" >/dev/null 2>&1 && echo yes || echo no)
+fi
+if [ "$CHECK_OK" = "yes" ]; then
+    echo "    OK — reachable at $CHECK_URL"
+else
+    echo "    WARNING: Cannot reach $CHECK_URL$CHECK_PATH"
+    echo "    Edit $CONFIG to update ollama_url/api_base/api_key, or run: clawcli doctor"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────

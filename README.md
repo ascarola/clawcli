@@ -43,7 +43,9 @@ clawcli
 clawcli doctor
 ```
 
-The installer will ask for your Ollama server URL, model, and optionally SearXNG and mcp-kali-server.
+The installer will ask for your LLM endpoint, an API key if that endpoint needs
+one, a model, and optionally SearXNG and mcp-kali-server. The endpoint can be a
+bare Ollama host or an [OpenAI-compatible gateway](#connecting-to-an-openai-compatible-gateway).
 
 ### Non-interactive install (CI / headless)
 
@@ -52,6 +54,15 @@ OLLAMA_URL=http://10.0.0.10:11434 \
 OLLAMA_MODEL=llama3.1:8b \
 SEARXNG_URL=http://10.0.0.20:8888 \
 KALI_SERVER_URL=http://10.0.0.5:5050 \
+bash <(curl -fsSL https://raw.githubusercontent.com/ascarola/clawcli/main/install.sh)
+```
+
+Against a gateway, give a `/v1` URL and a key:
+
+```bash
+OLLAMA_URL=http://10.0.0.10:5010/v1 \
+API_KEY=sk-... \
+OLLAMA_MODEL=gemma4:26b \
 bash <(curl -fsSL https://raw.githubusercontent.com/ascarola/clawcli/main/install.sh)
 ```
 
@@ -89,8 +100,11 @@ Switch models at any time with `/model` (interactive picker) or `/model llama3.1
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `model` | `gemma4:26b` | Ollama model |
+| `model` | `gemma4:26b` | Model name, as the endpoint advertises it |
 | `ollama_url` | `http://localhost:11434` | Ollama server URL |
+| `api_base` | `""` | API base URL — overrides `ollama_url` when set (see [Connecting to a gateway](#connecting-to-an-openai-compatible-gateway)) |
+| `api_key` | `""` | Bearer token for the LLM endpoint; leave empty for a bare Ollama host (redacted in `/config`) |
+| `api_format` | `"auto"` | Wire format: `auto`, `ollama`, or `openai`. `auto` infers `openai` from a `/v1` URL |
 | `searxng_url` | `""` | SearXNG URL (leave empty to disable) |
 | `assistant_name` | `CLAWCLI` | Name shown in the banner and used by the model |
 | `user_name` | `""` | Your name — model will address you by it |
@@ -110,7 +124,76 @@ Switch models at any time with `/model` (interactive picker) or `/model llama3.1
 | `mcp_server_url` | `""` | MCP server URL (leave empty to disable) |
 | `mcp_bearer_token` | `""` | Bearer token for MCP server authentication (shown as `***` in `/config`) |
 | `mcp_excluded_tools` | `[]` | List of MCP tool names to hide from the model (use `/mcp exclude`) |
-| `vision_model` | `""` | Ollama model to use for `read_image` — defaults to the active model if empty |
+| `vision_model` | `""` | Model to use for `read_image` — defaults to the active model if empty |
+
+## Connecting to an OpenAI-compatible gateway
+
+CLAWCLI speaks two wire formats and picks one automatically:
+
+| Backend | Endpoints used | Auth |
+|---------|----------------|------|
+| **Ollama** (default) | `/api/chat`, `/api/tags`, `/api/show` | none |
+| **OpenAI-compatible** | `/chat/completions`, `/models` | `Authorization: Bearer <api_key>` |
+
+This covers LiteLLM, vLLM, LocalAI, OpenRouter, a self-hosted AI gateway, or
+the OpenAI API itself — anything serving the OpenAI chat-completions schema.
+
+**Nothing changes for an existing Ollama setup.** `api_format` defaults to
+`auto`, which only selects the OpenAI path when the URL carries a version
+suffix like `/v1`. With `api_key` empty, no `Authorization` header is sent at
+all, so a bare Ollama host receives exactly the requests it always did.
+
+To point CLAWCLI at a gateway:
+
+```bash
+# inside a session
+/key sk-...                     # store the token, verify it, list models
+/set api_base http://gateway.local:5010/v1
+```
+
+Or edit `config.json` directly:
+
+```json
+{
+  "api_base": "http://gateway.local:5010/v1",
+  "api_key":  "sk-...",
+  "model":    "gemma4:26b"
+}
+```
+
+Then confirm with `clawcli doctor`, which reports the resolved backend, whether
+a key is set and where it came from, and whether your `model` is advertised.
+
+### Keeping the token out of config.json
+
+Set `CLAWCLI_API_KEY` instead — it takes precedence over `config.json`, so the
+token never has to be written to disk:
+
+```bash
+export CLAWCLI_API_KEY="sk-..."
+```
+
+When a key *is* stored in `config.json`, CLAWCLI writes that file with mode
+`0600`. `/config` and `/doctor` only ever show a masked form (`sk-gw-h…KVYY`).
+
+### What differs on the OpenAI path
+
+| | Ollama | Gateway |
+|---|---|---|
+| `context_window` | read from `/api/show` | read from `/models` if the server reports it, else your configured value |
+| `num_ctx` | sent per request | not sent — the server owns context sizing |
+| `think` | sent as a request parameter | not sent; gateways surface reasoning as `reasoning_content` |
+| `/model` picker | shows size, parameters, quantization | shows backend, context length, capabilities |
+
+Tool calling, streaming, vision/OCR, and token accounting work on both paths.
+
+Both are covered by the test suite, which asserts that a config without
+`api_key`/`api_base` still produces the original Ollama requests:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Usage
 
@@ -166,7 +249,10 @@ Type `/` in the REPL to see a scrollable autocomplete list.
 | `/config` | Show current config |
 | `/cwd <path>` | Change working directory |
 | `/model` | Interactive model picker — arrow keys to navigate, Enter to confirm |
-| `/model <name>` | Switch Ollama model directly (context window auto-detected) |
+| `/model <name>` | Switch model directly (context window auto-detected) |
+| `/key <token>` | Set the LLM API key, save it, and verify it against the endpoint |
+| `/key` | Show the endpoint, resolved API format, and whether a key is set (masked) |
+| `/key clear` | Remove the stored API key — requests go out unauthenticated |
 | `/searxng <url>` | Set SearXNG URL and save to config |
 | `/searxng` | Show current SearXNG URL and reachability status |
 | `/searxng disable` | Remove SearXNG from config |
@@ -298,6 +384,7 @@ The model maintains a persistent `memory/MEMORY.md` file across sessions. It rea
 │   ├── __init__.py         # Tool definitions (standard + Kali)
 │   ├── file_tools.py       # File read/write/edit/glob/grep
 │   ├── bash_tool.py        # Bash execution with allow/deny enforcement
+│   ├── api_client.py       # LLM backend layer (Ollama native / OpenAI-compatible)
 │   ├── search_tool.py      # SearXNG search + web fetch
 │   ├── image_tool.py       # Vision/OCR via Ollama multimodal models
 │   └── kali_tool.py        # mcp-kali-server integration
