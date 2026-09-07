@@ -53,7 +53,7 @@ when a request fails mid-turn, Ctrl-C no longer exits without saving, and
 
 ## Requirements
 
-- **Python 3.9+**
+- **Python 3.10+** (macOS ships 3.9 — install a newer one, e.g. `brew install python@3.13`)
 - **[Ollama](https://ollama.com)** running locally or on your network, *or* an OpenAI-compatible endpoint
 - A model the endpoint serves (see [Model Recommendations](#model-recommendations) below)
 - **SearXNG** *(optional)* — self-hosted search for `research <topic>` prompts
@@ -117,7 +117,8 @@ To migrate an existing system-Python install:
 
 ```bash
 cd ~/clawcli
-python3 -m venv .venv
+python3 -m venv .venv          # use a 3.10+ interpreter (e.g. python3.12) if `python3` is older
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 printf '#!/bin/bash\nexec "%s/.venv/bin/python3" "%s/clawcli.py" "$@"\n' "$PWD" "$PWD" > clawcli
 chmod +x clawcli

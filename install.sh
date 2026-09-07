@@ -60,14 +60,38 @@ echo "────────────────────────�
 echo ""
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────
-command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found. Install it and retry."; exit 1; }
-command -v git     >/dev/null 2>&1 || { echo "ERROR: git not found. Install it and retry."; exit 1; }
+command -v git >/dev/null 2>&1 || { echo "ERROR: git not found. Install it and retry."; exit 1; }
+
+# clawcli's dependencies (requests, curl_cffi, pymupdf, prompt_toolkit) require
+# Python 3.10+. The system `python3` is often older (macOS ships 3.9), which
+# would fail later with a cryptic "no matching distribution" from pip — so pick
+# the newest 3.10+ interpreter here and fail loudly if there isn't one.
+PYTHON=""
+for cand in python3.13 python3.12 python3.11 python3.10 python3; do
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        PYTHON="$cand"
+        break
+    fi
+done
+if [ -z "$PYTHON" ]; then
+    echo "ERROR: clawcli needs Python 3.10 or newer, but none was found on PATH."
+    if command -v brew >/dev/null 2>&1; then
+        echo "  Install it with:  brew install python@3.13"
+    elif command -v apt-get >/dev/null 2>&1; then
+        echo "  Install it with:  sudo apt-get install python3 python3-venv python3-pip"
+    else
+        echo "  Install Python 3.10+ from your package manager or https://python.org and retry."
+    fi
+    exit 1
+fi
+echo "==> Using $("$PYTHON" --version 2>&1) at $(command -v "$PYTHON")"
 
 # On Debian/Ubuntu, proactively ensure venv and pip packages are present
 if command -v apt-get >/dev/null 2>&1; then
     MISSING=""
-    python3 -m venv --help >/dev/null 2>&1 || MISSING="$MISSING python3-venv"
-    python3 -m pip --version >/dev/null 2>&1  || MISSING="$MISSING python3-pip"
+    "$PYTHON" -m venv --help >/dev/null 2>&1 || MISSING="$MISSING python3-venv"
+    "$PYTHON" -m pip --version >/dev/null 2>&1  || MISSING="$MISSING python3-pip"
     if [ -n "$MISSING" ]; then
         echo "==> Installing missing system packages:$MISSING"
         sudo apt-get install -y $MISSING  # shellcheck disable=SC2086 — intentional word-split
@@ -97,9 +121,14 @@ fi
 
 # ── Virtualenv + Python dependencies ─────────────────────────────────────────
 VENV="$INSTALL_DIR/.venv"
+# Rebuild a venv left over from an older interpreter (e.g. a failed 3.9 install)
+if [ -d "$VENV" ] && ! "$VENV/bin/python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+    echo "==> Existing virtualenv uses an unsupported Python — rebuilding it..."
+    rm -rf "$VENV"
+fi
 if [ ! -d "$VENV" ]; then
     echo "==> Creating virtualenv..."
-    if ! python3 -m venv "$VENV" 2>/dev/null; then
+    if ! "$PYTHON" -m venv "$VENV" 2>/dev/null; then
         if command -v apt-get >/dev/null 2>&1; then
             sudo apt-get install -y python3-venv python3-pip
         elif command -v dnf >/dev/null 2>&1; then
@@ -107,11 +136,12 @@ if [ ! -d "$VENV" ]; then
         elif command -v pacman >/dev/null 2>&1; then
             sudo pacman -Sy --noconfirm python-pip
         fi
-        python3 -m venv "$VENV"
+        "$PYTHON" -m venv "$VENV"
     fi
 fi
 
 echo "==> Installing Python dependencies..."
+"$VENV/bin/python" -m pip install -q --upgrade pip
 "$VENV/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
 
 # ── Config — only prompt/generate on fresh install ────────────────────────────

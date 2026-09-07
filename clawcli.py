@@ -1569,10 +1569,10 @@ def do_doctor(config: dict):
 
     # Python version
     pv = _sys.version_info
-    if pv >= (3, 9):
+    if pv >= (3, 10):
         console.print(f"[green]✓[/green]  Python {pv.major}.{pv.minor}.{pv.micro}")
     else:
-        console.print(f"[red]✗[/red]  Python {pv.major}.{pv.minor}.{pv.micro} — 3.9+ required")
+        console.print(f"[red]✗[/red]  Python {pv.major}.{pv.minor}.{pv.micro} — 3.10+ required")
         issues += 1
 
     # curl_cffi
