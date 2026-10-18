@@ -584,6 +584,15 @@ pip index versions <package>
 
 Dependabot reads GitHub Security Advisories and can reference a "fixed in" version before it has been published to PyPI. Merging such a PR will break installs. If the listed version is not in the output of the command above, close the PR and wait for the real release.
 
+## Releasing
+
+The `VERSION` file is the source of truth for the version CLAWCLI reports; git tags are only a fallback when it is missing. To cut a release, bump `VERSION` (and the "What's new" section) in one commit, then tag that commit to match:
+
+```bash
+git tag -a v1.7.0 -m "CLAWCLI 1.7.0"
+git push origin main v1.7.0
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
