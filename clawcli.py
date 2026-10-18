@@ -1743,9 +1743,10 @@ def do_update():
     else:
         console.print(output)
 
-    # Fetch tags separately — git pull doesn't reliably fetch them
+    # Fetch tags separately — git pull doesn't reliably fetch them.
+    # --force lets tags moved by a history rewrite replace stale local ones.
     subprocess.run(  # nosec B603 B607
-        ["git", "fetch", "--tags"],
+        ["git", "fetch", "--tags", "--force"],
         cwd=str(CLAWCLI_DIR),
         capture_output=True,
     )
